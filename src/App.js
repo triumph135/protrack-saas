@@ -14,6 +14,7 @@ import { tenantDbService } from './lib/tenantDbService';
 import TenantRegistration from './components/TenantRegistration';
 import Logo from './components/Logo';
 import FileAttachments from './components/FileAttachments';
+import BudgetVsActualReport from './components/BudgetVsActualReport';
 
 const ProjectTrackingApp = () => {
   // Authentication
@@ -2724,6 +2725,17 @@ const { tenant } = useTenant();
                 >
                   <BarChart3 className="w-4 h-4" />
                   Dashboard
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => setCurrentView('budgetReport')}
+                  className={`w-full text-left px-4 py-2 rounded-md flex items-center gap-3 ${
+                    currentView === 'budgetReport' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <BarChart3 className="w-4 h-4" />
+                  Budget vs Actual Report
                 </button>
               </li>
               
