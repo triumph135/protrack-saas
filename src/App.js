@@ -2826,6 +2826,17 @@ const { tenant } = useTenant();
             {['material', 'labor', 'equipment', 'subcontractor', 'others', 'capLeases', 'consumable'].includes(currentView) && (
               <CostCategoryView category={currentView} />
             )}
+            {currentView === 'budgetReport' && (
+              <BudgetVsActualReport
+                activeProject={activeProject}
+                costData={costData}
+                budgetData={budgetData}
+                calculateTotals={calculateTotals}
+                hasPermission={hasPermission}
+                tenantDbService={tenantDbService}
+                loading={loading}
+              />
+            )}
           </main>
         </div>
       </div>
