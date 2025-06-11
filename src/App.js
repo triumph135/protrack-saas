@@ -32,6 +32,7 @@ const { tenant } = useTenant();
   const [editingUser, setEditingUser] = useState(null);
   const [editingProject, setEditingProject] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showBudgetReport, setShowBudgetReport] = useState(false);
 
   // Cost categories data structure
   const [costData, setCostData] = useState({
@@ -1424,6 +1425,33 @@ const { tenant } = useTenant();
             </div>
           </div>
         </div>
+        {/* Budget vs Actual Report Section - ADD THIS */}
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold text-gray-900">Budget vs Actual Report</h2>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowBudgetReport(!showBudgetReport)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+              >
+                <BarChart3 className="w-4 h-4" />
+                {showBudgetReport ? 'Hide Report' : 'Show Report'}
+              </button>
+            </div>
+          </div>
+          
+          {showBudgetReport && (
+            <BudgetVsActualReport
+              activeProject={activeProject}
+              costData={costData}
+              budgetData={budgetData}
+              calculateTotals={calculateTotals}
+              hasPermission={hasPermission}
+              tenantDbService={tenantDbService}
+              loading={loading}
+            />
+          )}
+        </div>
       </div>
     );
   };
@@ -2727,17 +2755,6 @@ const { tenant } = useTenant();
                   Dashboard
                 </button>
               </li>
-              <li>
-                <button
-                  onClick={() => setCurrentView('budgetReport')}
-                  className={`w-full text-left px-4 py-2 rounded-md flex items-center gap-3 ${
-                    currentView === 'budgetReport' ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  <BarChart3 className="w-4 h-4" />
-                  Budget vs Actual Report
-                </button>
-              </li>
               
               {hasPermission('invoices', 'read') && (
                 <li>
@@ -2825,17 +2842,6 @@ const { tenant } = useTenant();
             {currentView === 'projects' && <ProjectManagementView />}
             {['material', 'labor', 'equipment', 'subcontractor', 'others', 'capLeases', 'consumable'].includes(currentView) && (
               <CostCategoryView category={currentView} />
-            )}
-            {currentView === 'budgetReport' && (
-              <BudgetVsActualReport
-                activeProject={activeProject}
-                costData={costData}
-                budgetData={budgetData}
-                calculateTotals={calculateTotals}
-                hasPermission={hasPermission}
-                tenantDbService={tenantDbService}
-                loading={loading}
-              />
             )}
           </main>
         </div>
