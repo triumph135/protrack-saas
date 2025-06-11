@@ -400,7 +400,7 @@ class TenantDbService {
     updateCategory: async (projectId, category, amount) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const budgetField = `${category}_budget`
+      const budgetField = category === 'capLeases' ? 'cap_leases_budget' : `${category}_budget`
       const updateData = { [budgetField]: amount }
       
       const { data, error } = await this.supabase

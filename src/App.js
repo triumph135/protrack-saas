@@ -406,11 +406,15 @@ const { tenant } = useTenant();
       setLoading(true);
       await tenantDbService.budgets.updateCategory(activeProject.id, category, amount);
       
-      // Update local state
-      setBudgetData(prev => ({
-        ...prev,
-        [`${category}_budget`]: amount
-      }));
+        // Update local state with correct key mapping
+    const budgetKey = category === 'capLeases' ? 'cap_leases_budget' : 
+                     category === 'others' ? 'others_budget' :
+                     `${category}_budget`;
+    
+    setBudgetData(prev => ({
+      ...prev,
+      [budgetKey]: amount
+    }));
     } catch (error) {
       console.error('Error updating budget:', error);
       alert('Error updating budget: ' + error.message);
