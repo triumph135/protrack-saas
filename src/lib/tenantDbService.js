@@ -126,9 +126,28 @@ class TenantDbService {
     }
   }
 
-  // Projects with tenant isolation
+  // Projects with status management and tenant isolation
   projects = {
-    getAll: async () => {
+    getAll: async (includeInactive = false) => {
+      if (!this.currentTenant) throw new Error('No tenant context')
+      
+      let query = this.supabase
+        .from('projects')
+        .select('*')
+        .eq('tenant_id', this.currentTenant)
+        .order('created_at', { ascending: false })
+      
+      // Filter to only active projects unless specifically requesting all
+      if (!includeInactive) {
+        query = query.eq('status', 'Active')
+      }
+      
+      const { data, error } = await query
+      if (error) throw error
+      return data
+    },
+
+    getAllWithStatus: async () => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
       const { data, error } = await this.supabase
@@ -146,7 +165,7 @@ class TenantDbService {
       
       const { data, error } = await this.supabase
         .from('projects')
-        .insert([{ ...projectData, tenant_id: this.currentTenant }])
+        .insert([{ ...projectData, tenant_id: this.currentTenant, status: 'Active' }])
         .select()
         .single()
       
@@ -160,6 +179,21 @@ class TenantDbService {
       const { data, error } = await this.supabase
         .from('projects')
         .update(updates)
+        .eq('id', projectId)
+        .eq('tenant_id', this.currentTenant)
+        .select()
+        .single()
+      
+      if (error) throw error
+      return data
+    },
+
+    updateStatus: async (projectId, status) => {
+      if (!this.currentTenant) throw new Error('No tenant context')
+      
+      const { data, error } = await this.supabase
+        .from('projects')
+        .update({ status })
         .eq('id', projectId)
         .eq('tenant_id', this.currentTenant)
         .select()

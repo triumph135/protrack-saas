@@ -73,12 +73,12 @@ const { tenant } = useTenant();
     }
   }, [user, tenant]);
 
-  // Load initial data
+    // Load initial data (updated for project status)
   const loadInitialData = async () => {
     setLoading(true);
     try {
-      // Load projects
-      const projectsData = await tenantDbService.projects.getAll();
+      // Load only active projects for the dropdown
+      const projectsData = await tenantDbService.projects.getAll(false); // false = only active
       setProjects(projectsData);
       
       if (projectsData.length > 0 && !activeProject) {
@@ -1898,7 +1898,7 @@ const DashboardView = () => {
     );
   };
 
-  // Project management view
+  // Project management view with status management
   const ProjectManagementView = () => {
     const [newProject, setNewProject] = useState({
       jobNumber: '',
@@ -1908,6 +1908,25 @@ const DashboardView = () => {
       totalContractValue: 0,
       status: 'Active'
     });
+    
+    const [allProjects, setAllProjects] = useState([]);
+    const [statusFilter, setStatusFilter] = useState('all'); // all, Active, Inactive, etc.
+
+    // Load all projects (including inactive) for management view
+    useEffect(() => {
+      const loadAllProjects = async () => {
+        if (hasPermission('projects', 'read')) {
+          try {
+            const allProjectsData = await tenantDbService.projects.getAllWithStatus();
+            setAllProjects(allProjectsData);
+          } catch (error) {
+            console.error('Error loading all projects:', error);
+          }
+        }
+      };
+      
+      loadAllProjects();
+    }, []);
 
     const canRead = hasPermission('projects', 'read');
     const canWrite = hasPermission('projects', 'write');
@@ -1915,10 +1934,34 @@ const DashboardView = () => {
     const handleSaveProject = async () => {
       try {
         if (editingProject) {
-          await handleUpdateProject(editingProject.id, editingProject);
+          const updatedProject = await tenantDbService.projects.update(editingProject.id, editingProject);
+          setAllProjects(allProjects.map(p => p.id === editingProject.id ? updatedProject : p));
+          
+          // Also update the main projects list if it's active
+          if (updatedProject.status === 'Active') {
+            const activeProjects = await tenantDbService.projects.getAll(false);
+            setProjects(activeProjects);
+          } else {
+            // Remove from active projects if deactivated
+            setProjects(projects.filter(p => p.id !== editingProject.id));
+            if (activeProject?.id === editingProject.id) {
+              const activeProjects = await tenantDbService.projects.getAll(false);
+              setActiveProject(activeProjects[0] || null);
+            }
+          }
         } else {
-          await handleCreateProject(newProject);
+          const newProjectData = await tenantDbService.projects.create(newProject);
+          setAllProjects([newProjectData, ...allProjects]);
+          
+          // Add to main projects list if active
+          if (newProjectData.status === 'Active') {
+            setProjects([newProjectData, ...projects]);
+            if (!activeProject) {
+              setActiveProject(newProjectData);
+            }
+          }
         }
+        
         setShowProjectModal(false);
         setEditingProject(null);
         setNewProject({
@@ -1931,8 +1974,37 @@ const DashboardView = () => {
         });
       } catch (error) {
         console.error('Error saving project:', error);
+        alert('Error saving project: ' + error.message);
       }
     };
+
+    const handleStatusChange = async (projectId, newStatus) => {
+      try {
+        setLoading(true);
+        const updatedProject = await tenantDbService.projects.updateStatus(projectId, newStatus);
+        setAllProjects(allProjects.map(p => p.id === projectId ? updatedProject : p));
+        
+        // Update main projects list
+        const activeProjects = await tenantDbService.projects.getAll(false);
+        setProjects(activeProjects);
+        
+        // If current active project was deactivated, switch to another active project
+        if (activeProject?.id === projectId && newStatus !== 'Active') {
+          setActiveProject(activeProjects[0] || null);
+        }
+      } catch (error) {
+        console.error('Error updating project status:', error);
+        alert('Error updating project status: ' + error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    // Filter projects based on status filter
+    const filteredProjects = allProjects.filter(project => {
+      if (statusFilter === 'all') return true;
+      return project.status === statusFilter;
+    });
 
     if (!canRead) {
       return (
@@ -1949,15 +2021,30 @@ const DashboardView = () => {
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold text-gray-900">Project Management</h2>
-          {canWrite && (
-            <button
-              onClick={() => setShowProjectModal(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+          <div className="flex gap-4">
+            {/* Status Filter */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <Plus className="w-4 h-4" />
-              New Project
-            </button>
-          )}
+              <option value="all">All Projects</option>
+              <option value="Active">Active Only</option>
+              <option value="Inactive">Inactive Only</option>
+              <option value="Completed">Completed</option>
+              <option value="On Hold">On Hold</option>
+            </select>
+            
+            {canWrite && (
+              <button
+                onClick={() => setShowProjectModal(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                New Project
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="bg-white rounded-lg shadow-md overflow-hidden">
@@ -1973,25 +2060,35 @@ const DashboardView = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {projects.map((project) => (
+              {filteredProjects.map((project) => (
                 <tr key={project.id} className={`hover:bg-gray-50 ${activeProject?.id === project.id ? 'bg-blue-50' : ''}`}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{project.jobNumber}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{project.jobName}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{project.customer}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${project.totalContractValue.toLocaleString()}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${project.totalContractValue?.toLocaleString()}</td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      project.status === 'Active' ? 'bg-green-100 text-green-800' :
-                      project.status === 'Completed' ? 'bg-blue-100 text-blue-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {project.status}
-                    </span>
+                    <select
+                      value={project.status}
+                      onChange={(e) => handleStatusChange(project.id, e.target.value)}
+                      disabled={!canWrite}
+                      className={`px-2 py-1 text-xs rounded-full border-0 focus:ring-2 focus:ring-blue-500 ${
+                        project.status === 'Active' ? 'bg-green-100 text-green-800' :
+                        project.status === 'Completed' ? 'bg-blue-100 text-blue-800' :
+                        project.status === 'Inactive' ? 'bg-gray-100 text-gray-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      } ${!canWrite ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                      <option value="Completed">Completed</option>
+                      <option value="On Hold">On Hold</option>
+                    </select>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <button
                       onClick={() => setActiveProject(project)}
                       className="text-green-600 hover:text-green-900 mr-4"
+                      title="View Project"
                     >
                       <Eye className="w-4 h-4" />
                     </button>
@@ -2007,7 +2104,12 @@ const DashboardView = () => {
                           <Edit className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => handleDeleteProject(project.id)}
+                          onClick={() => {
+                            if (window.confirm('Are you sure you want to delete this project? This will also delete all associated data.')) {
+                              handleDeleteProject(project.id);
+                              setAllProjects(allProjects.filter(p => p.id !== project.id));
+                            }
+                          }}
                           disabled={loading}
                           className="text-red-600 hover:text-red-900"
                         >
@@ -2020,9 +2122,15 @@ const DashboardView = () => {
               ))}
             </tbody>
           </table>
+          
+          {filteredProjects.length === 0 && (
+            <div className="text-center py-8 text-gray-500">
+              {statusFilter === 'all' ? 'No projects found' : `No ${statusFilter.toLowerCase()} projects found`}
+            </div>
+          )}
         </div>
 
-        {/* Project Modal */}
+        {/* Project Modal - Update the form to include status */}
         {showProjectModal && canWrite && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg w-full max-w-md">
@@ -2092,6 +2200,22 @@ const DashboardView = () => {
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select
+                    value={editingProject ? editingProject.status : newProject.status}
+                    onChange={(e) => editingProject 
+                      ? setEditingProject({...editingProject, status: e.target.value})
+                      : setNewProject({...newProject, status: e.target.value})
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                    <option value="Completed">Completed</option>
+                    <option value="On Hold">On Hold</option>
+                  </select>
                 </div>
               </div>
               <div className="flex gap-2 mt-6">
