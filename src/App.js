@@ -545,9 +545,9 @@ const calculateTotals = () => {
       Labor: ${totals.labor.toLocaleString()}
       Equipment: ${totals.equipment.toLocaleString()}
       Subcontractors: ${totals.subcontractor.toLocaleString()}
-      Others: ${totals.others.toLocaleString()}
       Cap Leases: ${totals.capLeases.toLocaleString()}
       Consumables: ${totals.consumable.toLocaleString()}
+      Other: ${totals.others.toLocaleString()}
       
       Total Costs: ${totals.totalCosts.toLocaleString()}
       Gross Profit: ${totals.grossProfit.toLocaleString()}
@@ -584,12 +584,12 @@ const calculateTotals = () => {
     csvContent += `Labor,${totals.labor}\n`;
     csvContent += `Equipment,${totals.equipment}\n`;
     csvContent += `Subcontractors,${totals.subcontractor}\n`;
-    csvContent += `Others,${totals.others}\n`;
     csvContent += `Cap Leases,${totals.capLeases}\n`;
     csvContent += `Consumables,${totals.consumable}\n`;
+    csvContent += `Other,${totals.others}\n`;
     csvContent += `Total Costs,${totals.totalCosts}\n`;
     csvContent += `Gross Profit,${totals.grossProfit}\n`;
-    csvContent += `Profit Margin,${((totals.grossProfit / totals.totalBilledToDate) * 100).toFixed(1)}%\n\n`;
+    csvContent += `Profit Margin,${((totals.grossProfit / totals.totalBilledToDate) * 100).toFixed(1)}%\n`;
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -636,10 +636,15 @@ const calculateTotals = () => {
       csvContent += "Date,Employee Name,ST Hours,ST Rate,OT Hours,OT Rate,DT Hours,DT Rate,Per Diem,Total Cost\n";
       categoryData.forEach(item => {
         const totalCost = ((item.stHours || 0) * (item.stRate || 0)) + 
-                         ((item.otHours || 0) * (item.otRate || 0)) + 
-                         ((item.dtHours || 0) * (item.dtRate || 0)) + 
-                         (item.perDiem || 0);
+                        ((item.otHours || 0) * (item.otRate || 0)) + 
+                        ((item.dtHours || 0) * (item.dtRate || 0)) + 
+                        (item.perDiem || 0);
         csvContent += `${item.date},${item.employeeName},${item.stHours},${item.stRate || 0},${item.otHours},${item.otRate || 0},${item.dtHours},${item.dtRate || 0},${item.perDiem},${totalCost}\n`;
+      });
+    } else if (category === 'others') {
+      csvContent += "Date,Vendor,Description,Invoice Number,Cost,In System\n";
+      categoryData.forEach(item => {
+        csvContent += `${item.date},${item.vendor || ''},${item.description || ''},${item.invoiceNumber},${item.cost},${item.inSystem ? 'Yes' : 'No'}\n`;
       });
     } else {
       csvContent += "Date,Vendor/Subcontractor,Invoice Number,Cost,In System\n";
@@ -702,12 +707,20 @@ const calculateTotals = () => {
     const getFormFields = () => {
       switch (category) {
         case 'material':
-        case 'others':
         case 'capLeases':
           return [
             { name: 'date', label: 'Date', type: 'date' },
             { name: 'vendor', label: 'Vendor', type: 'text' },
             { name: 'invoiceNumber', label: 'Invoice Number', type: 'text' },
+            { name: 'cost', label: 'Cost', type: 'number' },
+            { name: 'inSystem', label: 'In System', type: 'checkbox' }
+          ];
+        case 'others':
+          return [
+            { name: 'date', label: 'Date', type: 'date' },
+            { name: 'vendor', label: 'Vendor', type: 'text' },
+            { name: 'invoiceNumber', label: 'Invoice Number', type: 'text' },
+            { name: 'description', label: 'Description', type: 'text' },
             { name: 'cost', label: 'Cost', type: 'number' },
             { name: 'inSystem', label: 'In System', type: 'checkbox' }
           ];
@@ -1549,6 +1562,15 @@ const DashboardView = () => {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Per Diem</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cost</th>
                     </>
+                  ) : category === 'others' ? (
+                    <>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    </>
                   ) : (
                     <>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
@@ -1579,6 +1601,19 @@ const DashboardView = () => {
                             ((item.otHours || 0) * (item.otRate || 0)) + 
                             ((item.dtHours || 0) * (item.dtRate || 0)) + 
                             (item.perDiem || 0)).toLocaleString()}
+                        </td>
+                      </>
+                    ) : category === 'others' ? (
+                      <>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.date}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.vendor || item.subcontractorName}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.description || '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.invoiceNumber}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.cost?.toLocaleString()}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-1 text-xs rounded-full ${item.inSystem ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                            {item.inSystem ? 'In System' : 'Pending'}
+                          </span>
                         </td>
                       </>
                     ) : (
@@ -2327,9 +2362,9 @@ const DashboardView = () => {
                 { key: 'labor', label: 'Labor', icon: Users },
                 { key: 'equipment', label: 'Equipment', icon: Wrench },
                 { key: 'subcontractor', label: 'Subcontractors', icon: User },
-                { key: 'others', label: 'Others', icon: FileText },
                 { key: 'capLeases', label: 'Cap Leases', icon: Calendar },
-                { key: 'consumable', label: 'Consumables', icon: Building }
+                { key: 'consumable', label: 'Consumables', icon: Building },
+                { key: 'others', label: 'Other', icon: FileText }
               ].filter(({ key }) => hasPermission(key, 'read')).map(({ key, label, icon: Icon }) => (
                 <li key={key}>
                   <button
