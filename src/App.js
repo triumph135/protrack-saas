@@ -13,6 +13,7 @@ import { useTenantAuth } from './hooks/useTenantAuth';
 import { tenantDbService } from './lib/tenantDbService';
 import TenantRegistration from './components/TenantRegistration';
 import Logo from './components/Logo';
+import FileAttachments from './components/FileAttachments';
 
 const ProjectTrackingApp = () => {
   // Authentication
@@ -812,6 +813,24 @@ const calculateTotals = () => {
             </div>
           ))}
         </div>
+
+        {/* File Attachments */}
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          {editItem ? (
+            <FileAttachments
+              entityType="cost"
+              entityId={editItem.id}
+              tenantId={tenant?.id}
+              userId={user?.id}
+              canEdit={hasPermission(category, 'write')}
+            />
+          ) : (
+            <div className="text-center py-4 text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+              <p className="text-sm">💡 Save this entry first, then edit it to add file attachments</p>
+            </div>
+          )}
+        </div>  
+        {/* Save Button */}
         <div className="flex gap-2">
           <button
             onClick={handleSubmit}
@@ -1359,6 +1378,24 @@ const DashboardView = () => {
                 />
               </div>
             </div>
+
+            {/* File Attachments */}
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              {editingInvoice ? (
+                <FileAttachments
+                  entityType="invoice"
+                  entityId={editingInvoice.id}
+                  tenantId={tenant?.id}
+                  userId={user?.id}
+                  canEdit={canWrite}
+                />
+              ) : (
+                <div className="text-center py-4 text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                  <p className="text-sm">💡 Save this invoice first, then edit it to add file attachments</p>
+                </div>
+              )}
+            </div>
+
             <div className="flex gap-2 mt-4">
               <button
                 onClick={handleSave}
@@ -1494,14 +1531,14 @@ const DashboardView = () => {
             <h2 className="text-2xl font-bold text-gray-900 capitalize">
               {category.replace(/([A-Z])/g, ' $1').trim()} Management
             </h2>
-            <span className={`px-2 py-1 text-xs rounded-full ${
-              permissionLevel === 'write' ? 'bg-green-100 text-green-800' :
-              permissionLevel === 'read' ? 'bg-yellow-100 text-yellow-800' :
-              'bg-red-100 text-red-800'
-            }`}>
-              {permissionLevel === 'write' ? 'Read/Write' : 
-               permissionLevel === 'read' ? 'Read Only' : 'No Access'}
-            </span>
+            {permissionLevel !== 'none' && (
+              <span className={`px-2 py-1 text-xs rounded-full ${
+                permissionLevel === 'write' ? 'bg-green-100 text-green-800' :
+                'bg-yellow-100 text-yellow-800'
+              }`}>
+                {permissionLevel === 'write' ? 'Read/Write' : 'Read Only'}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
