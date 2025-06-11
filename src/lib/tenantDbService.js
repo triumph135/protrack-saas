@@ -273,7 +273,7 @@ class TenantDbService {
     }
   }
 
-  // Costs with tenant isolation
+// Costs with tenant isolation
   costs = {
     getByProject: async (category, projectId) => {
       if (!this.currentTenant) throw new Error('No tenant context')
@@ -332,6 +332,87 @@ class TenantDbService {
         .eq('tenant_id', this.currentTenant)
       
       if (error) throw error
+    }
+  }
+
+  // Budget operations with tenant isolation
+  budgets = {
+    getByProject: async (projectId) => {
+      if (!this.currentTenant) throw new Error('No tenant context')
+      
+      const { data, error } = await this.supabase
+        .from('project_budgets')
+        .select('*')
+        .eq('tenant_id', this.currentTenant)
+        .eq('project_id', projectId)
+        .single()
+      
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        throw error
+      }
+      
+      // If no budget exists, create a default one
+      if (!data) {
+        return await this.createDefaultBudget(projectId)
+      }
+      
+      return data
+    },
+
+    createDefaultBudget: async (projectId) => {
+      if (!this.currentTenant) throw new Error('No tenant context')
+      
+      const { data, error } = await this.supabase
+        .from('project_budgets')
+        .insert([{
+          tenant_id: this.currentTenant,
+          project_id: projectId,
+          material_budget: 0,
+          labor_budget: 0,
+          equipment_budget: 0,
+          subcontractor_budget: 0,
+          others_budget: 0,
+          cap_leases_budget: 0,
+          consumable_budget: 0
+        }])
+        .select()
+        .single()
+      
+      if (error) throw error
+      return data
+    },
+
+    update: async (projectId, budgetData) => {
+      if (!this.currentTenant) throw new Error('No tenant context')
+      
+      const { data, error } = await this.supabase
+        .from('project_budgets')
+        .update(budgetData)
+        .eq('tenant_id', this.currentTenant)
+        .eq('project_id', projectId)
+        .select()
+        .single()
+      
+      if (error) throw error
+      return data
+    },
+
+    updateCategory: async (projectId, category, amount) => {
+      if (!this.currentTenant) throw new Error('No tenant context')
+      
+      const budgetField = `${category}_budget`
+      const updateData = { [budgetField]: amount }
+      
+      const { data, error } = await this.supabase
+        .from('project_budgets')
+        .update(updateData)
+        .eq('tenant_id', this.currentTenant)
+        .eq('project_id', projectId)
+        .select()
+        .single()
+      
+      if (error) throw error
+      return data
     }
   }
 }

@@ -43,6 +43,17 @@ const { tenant } = useTenant();
     consumable: []
   });
 
+  // Budget data structure
+  const [budgetData, setBudgetData] = useState({
+    material_budget: 0,
+    labor_budget: 0,
+    equipment_budget: 0,
+    subcontractor_budget: 0,
+    others_budget: 0,
+    cap_leases_budget: 0,
+    consumable_budget: 0
+  });
+
   // Filter states
   const [filters, setFilters] = useState({
     material: { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', inSystem: 'all' },
@@ -119,6 +130,25 @@ const { tenant } = useTenant();
       }
 
       setCostData(newCostData);
+
+      // Load budget data
+      try {
+        const projectBudget = await tenantDbService.budgets.getByProject(projectId);
+        setBudgetData(projectBudget);
+      } catch (error) {
+        console.error('Error loading budget data:', error);
+        // Set default budget if loading fails
+        setBudgetData({
+          material_budget: 0,
+          labor_budget: 0,
+          equipment_budget: 0,
+          subcontractor_budget: 0,
+          others_budget: 0,
+          cap_leases_budget: 0,
+          consumable_budget: 0
+        });
+      }
+
     } catch (error) {
       console.error('Error loading project data:', error);
     }
@@ -366,6 +396,42 @@ const { tenant } = useTenant();
     }
   };
 
+  // Budget operations
+  const handleUpdateBudget = async (category, amount) => {
+    if (!activeProject) return;
+    
+    try {
+      setLoading(true);
+      await tenantDbService.budgets.updateCategory(activeProject.id, category, amount);
+      
+      // Update local state
+      setBudgetData(prev => ({
+        ...prev,
+        [`${category}_budget`]: amount
+      }));
+    } catch (error) {
+      console.error('Error updating budget:', error);
+      alert('Error updating budget: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateAllBudgets = async (newBudgetData) => {
+    if (!activeProject) return;
+    
+    try {
+      setLoading(true);
+      const updatedBudget = await tenantDbService.budgets.update(activeProject.id, newBudgetData);
+      setBudgetData(updatedBudget);
+    } catch (error) {
+      console.error('Error updating budgets:', error);
+      alert('Error updating budgets: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Filter data based on current filters
   const applyFilters = (data, category) => {
     const categoryFilters = filters[category];
@@ -457,9 +523,10 @@ const { tenant } = useTenant();
       }));
     }
   };
-  // Handle project selection
-  // Calculate totals
-const calculateTotals = () => {
+  
+
+  // Calculate totals with budget comparison
+  const calculateTotals = () => {
   // Handle case where no active project
   if (!activeProject) {
     return {
@@ -472,43 +539,71 @@ const calculateTotals = () => {
       consumable: 0,
       totalCosts: 0,
       grossProfit: 0,
-      totalBilledToDate: 0
+      totalBilledToDate: 0,
+      budgets: {},
+      variances: {},
+      totalBudget: 0,
+      totalVariance: 0
     };
   }
-    const totals = {};
-    Object.keys(costData).forEach(category => {
-      if (category === 'labor') {
-        // Special calculation for labor
-        totals[category] = costData[category]
-          .filter(item => item.projectId === activeProject.id || !item.projectId)
-          .reduce((sum, item) => {
-            const stCost = (item.stHours || 0) * (item.stRate || 0);
-            const otCost = (item.otHours || 0) * (item.otRate || 0);
-            const dtCost = (item.dtHours || 0) * (item.dtRate || 0);
-            const perDiem = item.perDiem || 0;
-            return sum + stCost + otCost + dtCost + perDiem;
-          }, 0);
-      } else {
-        // Regular calculation for other categories
-        totals[category] = costData[category]
-          .filter(item => item.projectId === activeProject.id || !item.projectId)
-          .reduce((sum, item) => {
-            return sum + (item.cost || 0);
-          }, 0);
-      }
-    });
+
+  const totals = {};
+  const budgets = {};
+  const variances = {};
+  
+  Object.keys(costData).forEach(category => {
+    if (category === 'labor') {
+      // Special calculation for labor
+      totals[category] = costData[category]
+        .filter(item => item.project_id === activeProject.id || !item.project_id)
+        .reduce((sum, item) => {
+          const stCost = (item.stHours || 0) * (item.stRate || 0);
+          const otCost = (item.otHours || 0) * (item.otRate || 0);
+          const dtCost = (item.dtHours || 0) * (item.dtRate || 0);
+          const perDiem = item.perDiem || 0;
+          return sum + stCost + otCost + dtCost + perDiem;
+        }, 0);
+    } else {
+      // Regular calculation for other categories
+      totals[category] = costData[category]
+        .filter(item => item.project_id === activeProject.id || !item.project_id)
+        .reduce((sum, item) => {
+          return sum + (item.cost || 0);
+        }, 0);
+    }
     
-    const totalCosts = Object.values(totals).reduce((sum, cost) => sum + cost, 0);
+    // Get budget for this category
+    const budgetKey = category === 'others' ? 'others_budget' : 
+                     category === 'capLeases' ? 'cap_leases_budget' :
+                     `${category}_budget`;
+    budgets[category] = budgetData[budgetKey] || 0;
     
-    // Calculate total billed from customer invoices
-    const totalBilledToDate = customerInvoices
-      .filter(inv => inv.projectId === activeProject.id)
-      .reduce((sum, inv) => sum + inv.amount, 0);
-    
-    const grossProfit = totalBilledToDate - totalCosts;
-    
-    return { ...totals, totalCosts, grossProfit, totalBilledToDate };
+    // Calculate variance (negative = over budget)
+    variances[category] = budgets[category] - totals[category];
+  });
+  
+  const totalCosts = Object.values(totals).reduce((sum, cost) => sum + cost, 0);
+  const totalBudget = Object.values(budgets).reduce((sum, budget) => sum + budget, 0);
+  const totalVariance = totalBudget - totalCosts;
+  
+  // Calculate total billed from customer invoices
+  const totalBilledToDate = customerInvoices
+    .filter(inv => inv.project_id === activeProject.id)
+    .reduce((sum, inv) => sum + inv.amount, 0);
+  
+  const grossProfit = totalBilledToDate - totalCosts;
+  
+  return { 
+    ...totals, 
+    totalCosts, 
+    grossProfit, 
+    totalBilledToDate,
+    budgets,
+    variances,
+    totalBudget,
+    totalVariance
   };
+};
 
   // Update contract value
   const updateContractValue = async (newValue) => {
@@ -1063,7 +1158,7 @@ const calculateTotals = () => {
   };
 
   // Dashboard view
-const DashboardView = () => {
+  const DashboardView = () => {
   const totals = calculateTotals();
   const [editingContractValue, setEditingContractValue] = useState(false);
   const [contractValueInput, setContractValueInput] = useState(activeProject?.totalContractValue || 0);
@@ -1214,22 +1309,118 @@ const DashboardView = () => {
         </div>
 
         {/* Cost Summary */}
+        {/* Enhanced Cost Summary with Budget Tracking */}
         <div className="bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Cost Summary</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {Object.entries(totals).filter(([key]) => key !== 'totalCosts' && key !== 'grossProfit' && key !== 'totalBilledToDate').map(([category, amount]) => (
-              <div key={category} className="bg-gray-50 p-4 rounded-lg">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <div className="text-lg font-semibold text-gray-900">${amount.toLocaleString()}</div>
-                    <div className="text-gray-600 capitalize">{category.replace(/([A-Z])/g, ' $1').trim()}</div>
-                  </div>
-                  {!hasPermission(category, 'read') && (
-                    <Lock className="w-4 h-4 text-gray-400" />
-                  )}
-                </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Budget vs Actual</h2>
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left py-2 px-3 text-sm font-medium text-gray-600">Category</th>
+                  <th className="text-right py-2 px-3 text-sm font-medium text-gray-600">Budget</th>
+                  <th className="text-right py-2 px-3 text-sm font-medium text-gray-600">Actual</th>
+                  <th className="text-right py-2 px-3 text-sm font-medium text-gray-600">Variance</th>
+                  <th className="text-right py-2 px-3 text-sm font-medium text-gray-600">% of Budget</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.keys(totals.budgets || {}).map((category) => {
+                  const actual = totals[category] || 0;
+                  const budget = totals.budgets[category] || 0;
+                  const variance = totals.variances[category] || 0;
+                  const percentUsed = budget > 0 ? (actual / budget) * 100 : 0;
+                  const isOverBudget = variance < 0;
+                  
+                  return (
+                    <tr key={category} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-2 px-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900 capitalize">
+                            {category.replace(/([A-Z])/g, ' $1').trim()}
+                          </span>
+                          {!hasPermission(category, 'read') && (
+                            <Lock className="w-3 h-3 text-gray-400" />
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2 px-3 text-right text-sm text-gray-600">
+                        ${budget.toLocaleString()}
+                      </td>
+                      <td className="py-2 px-3 text-right text-sm font-medium text-gray-900">
+                        ${actual.toLocaleString()}
+                      </td>
+                      <td className={`py-2 px-3 text-right text-sm font-medium ${
+                        isOverBudget ? 'text-red-600' : 'text-green-600'
+                      }`}>
+                        {isOverBudget ? '-' : ''}${Math.abs(variance).toLocaleString()}
+                        {isOverBudget && ' (Over)'}
+                      </td>
+                      <td className="py-2 px-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <span className={`text-sm font-medium ${
+                            percentUsed > 100 ? 'text-red-600' : 
+                            percentUsed > 80 ? 'text-yellow-600' : 'text-green-600'
+                          }`}>
+                            {percentUsed.toFixed(1)}%
+                          </span>
+                          <div className="w-16 bg-gray-200 rounded-full h-2">
+                            <div 
+                              className={`h-2 rounded-full ${
+                                percentUsed > 100 ? 'bg-red-500' : 
+                                percentUsed > 80 ? 'bg-yellow-500' : 'bg-green-500'
+                              }`}
+                              style={{ width: `${Math.min(percentUsed, 100)}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr className="border-t-2 border-gray-300 font-semibold">
+                  <td className="py-3 px-3 text-sm text-gray-900">Total</td>
+                  <td className="py-3 px-3 text-right text-sm text-gray-900">
+                    ${(totals.totalBudget || 0).toLocaleString()}
+                  </td>
+                  <td className="py-3 px-3 text-right text-sm text-gray-900">
+                    ${totals.totalCosts.toLocaleString()}
+                  </td>
+                  <td className={`py-3 px-3 text-right text-sm font-bold ${
+                    (totals.totalVariance || 0) < 0 ? 'text-red-600' : 'text-green-600'
+                  }`}>
+                    {(totals.totalVariance || 0) < 0 ? '-' : ''}${Math.abs(totals.totalVariance || 0).toLocaleString()}
+                    {(totals.totalVariance || 0) < 0 && ' (Over)'}
+                  </td>
+                  <td className="py-3 px-3 text-right text-sm font-bold text-gray-900">
+                    {totals.totalBudget > 0 ? ((totals.totalCosts / totals.totalBudget) * 100).toFixed(1) : '0.0'}%
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Budget Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-6 border-t border-gray-200">
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <div className="text-blue-600 text-lg font-semibold">${(totals.totalBudget || 0).toLocaleString()}</div>
+              <div className="text-gray-600 text-sm">Total Budget</div>
+            </div>
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <div className="text-gray-900 text-lg font-semibold">${totals.totalCosts.toLocaleString()}</div>
+              <div className="text-gray-600 text-sm">Actual Costs</div>
+            </div>
+            <div className={`p-4 rounded-lg ${
+              (totals.totalVariance || 0) < 0 ? 'bg-red-50' : 'bg-green-50'
+            }`}>
+              <div className={`text-lg font-semibold ${
+                (totals.totalVariance || 0) < 0 ? 'text-red-600' : 'text-green-600'
+              }`}>
+                {(totals.totalVariance || 0) < 0 ? '-' : ''}${Math.abs(totals.totalVariance || 0).toLocaleString()}
               </div>
-            ))}
+              <div className="text-gray-600 text-sm">
+                {(totals.totalVariance || 0) < 0 ? 'Over Budget' : 'Under Budget'}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1473,10 +1664,155 @@ const DashboardView = () => {
     );
   };
 
+  // Budget Tracking Section Component
+  const BudgetTrackingSection = ({ 
+    category, 
+    actualAmount, 
+    budgetAmount, 
+    variance, 
+    onUpdateBudget, 
+    canEdit,
+    loading 
+  }) => {
+    const [editing, setEditing] = useState(false);
+    const [newBudget, setNewBudget] = useState(budgetAmount);
+    
+    useEffect(() => {
+      setNewBudget(budgetAmount);
+    }, [budgetAmount]);
+
+    const handleSave = async () => {
+      await onUpdateBudget(category, newBudget);
+      setEditing(false);
+    };
+
+    const handleCancel = () => {
+      setNewBudget(budgetAmount);
+      setEditing(false);
+    };
+
+    const percentUsed = budgetAmount > 0 ? (actualAmount / budgetAmount) * 100 : 0;
+    const isOverBudget = variance < 0;
+
+    return (
+      <div>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">
+            {category.replace(/([A-Z])/g, ' $1').trim()} Budget Tracking
+          </h3>
+          {canEdit && !editing && (
+            <button
+              onClick={() => setEditing(true)}
+              className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+            >
+              <Edit className="w-4 h-4" />
+              Edit Budget
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+          {/* Budget Amount */}
+          <div className="bg-blue-50 p-4 rounded-lg">
+            {editing ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Budget</label>
+                <input
+                  type="number"
+                  value={newBudget}
+                  onChange={(e) => setNewBudget(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            ) : (
+              <>
+                <div className="text-blue-600 text-xl font-bold">${budgetAmount.toLocaleString()}</div>
+                <div className="text-gray-600 text-sm">Budgeted</div>
+              </>
+            )}
+          </div>
+
+          {/* Actual Amount */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <div className="text-gray-900 text-xl font-bold">${actualAmount.toLocaleString()}</div>
+            <div className="text-gray-600 text-sm">Actual</div>
+          </div>
+
+          {/* Variance */}
+          <div className={`p-4 rounded-lg ${isOverBudget ? 'bg-red-50' : 'bg-green-50'}`}>
+            <div className={`text-xl font-bold ${isOverBudget ? 'text-red-600' : 'text-green-600'}`}>
+              {isOverBudget ? '-' : ''}${Math.abs(variance).toLocaleString()}
+            </div>
+            <div className="text-gray-600 text-sm">
+              {isOverBudget ? 'Over Budget' : 'Under Budget'}
+            </div>
+          </div>
+
+          {/* Percentage Used */}
+          <div className="bg-purple-50 p-4 rounded-lg">
+            <div className={`text-xl font-bold ${
+              percentUsed > 100 ? 'text-red-600' : 
+              percentUsed > 80 ? 'text-yellow-600' : 'text-purple-600'
+            }`}>
+              {percentUsed.toFixed(1)}%
+            </div>
+            <div className="text-gray-600 text-sm">Used</div>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="mb-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm text-gray-600">Budget Progress</span>
+            <span className={`text-sm font-medium ${
+              percentUsed > 100 ? 'text-red-600' : 
+              percentUsed > 80 ? 'text-yellow-600' : 'text-green-600'
+            }`}>
+              ${actualAmount.toLocaleString()} / ${budgetAmount.toLocaleString()}
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-3">
+            <div 
+              className={`h-3 rounded-full transition-all duration-300 ${
+                percentUsed > 100 ? 'bg-red-500' : 
+                percentUsed > 80 ? 'bg-yellow-500' : 'bg-green-500'
+              }`}
+              style={{ width: `${Math.min(percentUsed, 100)}%` }}
+            ></div>
+          </div>
+        </div>
+
+        {/* Edit Controls */}
+        {editing && (
+          <div className="flex gap-2">
+            <button
+              onClick={handleSave}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" />
+              {loading ? 'Saving...' : 'Save Budget'}
+            </button>
+            <button
+              onClick={handleCancel}
+              className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+  
+  
   // Cost Category View with enhanced permissions
-  const CostCategoryView = ({ category }) => {
+    const CostCategoryView = ({ category }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
+    const totals = calculateTotals();
+    const budgets = totals.budgets || {};
+    const variances = totals.variances || {};
     
     const allCategoryData = (costData[category] || []).filter(item => 
       item.projectId === activeProject?.id || !item.projectId
@@ -1562,6 +1898,19 @@ const DashboardView = () => {
               </button>
             )}
           </div>
+        </div>
+
+        {/* Budget vs Actual Section */}
+        <div className="bg-white p-6 rounded-lg shadow-md border-l-4 border-blue-500">
+          <BudgetTrackingSection 
+            category={category}
+            actualAmount={filteredTotal}
+            budgetAmount={budgets[category] || 0}
+            variance={variances[category] || 0}
+            onUpdateBudget={handleUpdateBudget}
+            canEdit={hasPermission(category, 'write')}
+            loading={loading}
+          />
         </div>
 
         {!activeProject && (
