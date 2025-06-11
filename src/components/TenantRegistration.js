@@ -2,6 +2,7 @@
 import React, { useState } from 'react'
 import { Building, User, Mail, Phone, CreditCard } from 'lucide-react'
 import { tenantDbService } from '../lib/tenantDbService'
+import Logo from './Logo';
 
 const TenantRegistration = ({ onSuccess }) => {
   const [step, setStep] = useState(1)
@@ -114,7 +115,7 @@ const TenantRegistration = ({ onSuccess }) => {
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="text-center">
-          <Building className="w-12 h-12 text-blue-600 mx-auto" />
+          <Logo size="lg" className="mx-auto" />
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
             Set up your ProTrack workspace
           </h2>

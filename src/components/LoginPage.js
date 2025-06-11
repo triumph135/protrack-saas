@@ -1,6 +1,7 @@
 // components/LoginPage.js
 import React, { useState } from 'react';
 import { BarChart3, Eye, EyeOff, Mail, Lock } from 'lucide-react';
+import Logo from './Logo';
 
 const LoginPage = ({ onSignIn, onSignUp, loading }) => {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -48,7 +49,7 @@ const LoginPage = ({ onSignIn, onSignUp, loading }) => {
         {/* Header */}
         <div className="text-center">
           <div className="flex justify-center items-center mb-6">
-            <BarChart3 className="w-12 h-12 text-blue-600 mr-3" />
+            <Logo size="lg" className="mr-3" />
             <h1 className="text-4xl font-bold text-gray-900">ProTrack</h1>
           </div>
           <h2 className="text-2xl font-semibold text-gray-700">

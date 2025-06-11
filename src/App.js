@@ -6,12 +6,13 @@ import {
   Building, Calendar, Wrench, User, FileText, Settings, 
   Download, Upload, Search, Filter, Eye, EyeOff, Lock, LogOut 
 } from 'lucide-react';
-import { useAuth } from './hooks/useAuth'; // You'll need to create this
-import LoginPage from './components/LoginPage'; // You'll need to create this
+import { useAuth } from './hooks/useAuth'; 
+import LoginPage from './components/LoginPage'; 
 import { TenantProvider, useTenant } from './contexts/TenantContext';
 import { useTenantAuth } from './hooks/useTenantAuth';
 import { tenantDbService } from './lib/tenantDbService';
 import TenantRegistration from './components/TenantRegistration';
+import Logo from './components/Logo';
 
 const ProjectTrackingApp = () => {
   // Authentication
@@ -2250,11 +2251,8 @@ const DashboardView = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <BarChart3 className="w-8 h-8 text-blue-600 mr-3" />
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">ProTrack</h1>
-                <div className="text-xs text-gray-500">{tenant?.name}</div>
-              </div>
+              <Logo size="md" className="mr-3" />
+              <div className="text-xs text-gray-500">{tenant?.name}</div>
             </div>
             <div className="flex items-center space-x-4">
               {projects.length > 0 && (
