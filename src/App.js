@@ -58,14 +58,14 @@ const { tenant } = useTenant();
 
   // Filter states
   const [filters, setFilters] = useState({
-    material: { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', inSystem: 'all' },
+    material: { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', in_system: 'all' },
     labor: { startDate: '', endDate: '', employeeName: '', minHours: '', maxHours: '' },
-    equipment: { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', inSystem: 'all' },
-    subcontractor: { startDate: '', endDate: '', subcontractorName: '', vendor: '', minCost: '', maxCost: '', inSystem: 'all' },
-    others: { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', inSystem: 'all' },
-    capLeases: { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', inSystem: 'all' },
-    consumable: { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', inSystem: 'all' },
-    invoices: { startDate: '', endDate: '', invoiceNumber: '', minAmount: '', maxAmount: '' }
+    equipment: { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', in_system: 'all' },
+    subcontractor: { startDate: '', endDate: '', subcontractorName: '', vendor: '', minCost: '', maxCost: '', in_system: 'all' },
+    others: { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', in_system: 'all' },
+    capLeases: { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', in_system: 'all' },
+    consumable: { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', in_system: 'all' },
+    invoices: { startDate: '', endDate: '', invoice_number: '', minAmount: '', maxAmount: '' }
   });
 
   // Load data when user logs in or active project changes
@@ -302,7 +302,7 @@ const { tenant } = useTenant();
       setLoading(true);
       const newInvoice = await tenantDbService.invoices.create({
         ...invoiceData,
-        projectId: activeProject.id
+        project_id: activeProject.id
       });
       setCustomerInvoices([...customerInvoices, newInvoice]);
     } catch (error) {
@@ -347,7 +347,8 @@ const { tenant } = useTenant();
       setLoading(true);
       const newCost = await tenantDbService.costs.create(category, {
         ...costData,
-        projectId: activeProject.id
+        projectId: activeProject.id,
+        in_system: true
       });
       
       setCostData(prev => ({
@@ -458,7 +459,7 @@ const { tenant } = useTenant();
           if (categoryFilters.vendor && !item.vendor?.toLowerCase().includes(categoryFilters.vendor.toLowerCase())) return false;
           if (categoryFilters.minCost && item.cost < parseFloat(categoryFilters.minCost)) return false;
           if (categoryFilters.maxCost && item.cost > parseFloat(categoryFilters.maxCost)) return false;
-          if (categoryFilters.inSystem !== 'all' && item.inSystem !== (categoryFilters.inSystem === 'true')) return false;
+          if (categoryFilters.in_system !== 'all' && item.in_system !== (categoryFilters.in_system === 'true')) return false;
           break;
 
         case 'labor':
@@ -473,7 +474,7 @@ const { tenant } = useTenant();
           if (categoryFilters.vendor && !item.vendor?.toLowerCase().includes(categoryFilters.vendor.toLowerCase())) return false;
           if (categoryFilters.minCost && item.cost < parseFloat(categoryFilters.minCost)) return false;
           if (categoryFilters.maxCost && item.cost > parseFloat(categoryFilters.maxCost)) return false;
-          if (categoryFilters.inSystem !== 'all' && item.inSystem !== (categoryFilters.inSystem === 'true')) return false;
+          if (categoryFilters.in_system !== 'all' && item.in_system !== (categoryFilters.in_system === 'true')) return false;
           break;
       }
 
@@ -487,9 +488,9 @@ const { tenant } = useTenant();
     if (!invoiceFilters) return invoices;
 
     return invoices.filter(invoice => {
-      if (invoiceFilters.startDate && invoice.dateBilled < invoiceFilters.startDate) return false;
-      if (invoiceFilters.endDate && invoice.dateBilled > invoiceFilters.endDate) return false;
-      if (invoiceFilters.invoiceNumber && !invoice.invoiceNumber?.toLowerCase().includes(invoiceFilters.invoiceNumber.toLowerCase())) return false;
+      if (invoiceFilters.startDate && invoice.date_billed < invoiceFilters.startDate) return false;
+      if (invoiceFilters.endDate && invoice.date_billed > invoiceFilters.endDate) return false;
+      if (invoiceFilters.invoice_number && !invoice.invoice_number?.toLowerCase().includes(invoiceFilters.invoice_number.toLowerCase())) return false;
       if (invoiceFilters.minAmount && invoice.amount < parseFloat(invoiceFilters.minAmount)) return false;
       if (invoiceFilters.maxAmount && invoice.amount > parseFloat(invoiceFilters.maxAmount)) return false;
       return true;
@@ -512,12 +513,12 @@ const { tenant } = useTenant();
     if (category === 'invoices') {
       setFilters(prev => ({
         ...prev,
-        invoices: { startDate: '', endDate: '', invoiceNumber: '', minAmount: '', maxAmount: '' }
+        invoices: { startDate: '', endDate: '', invoice_number: '', minAmount: '', maxAmount: '' }
       }));
     } else {
       const baseFilter = category === 'labor' 
         ? { startDate: '', endDate: '', employeeName: '', minHours: '', maxHours: '' }
-        : { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', inSystem: 'all' };
+        : { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', in_system: 'all' };
       
       if (category === 'subcontractor') {
         baseFilter.subcontractorName = '';
@@ -706,7 +707,7 @@ const { tenant } = useTenant();
 
   const exportCategoryToExcel = (category, useFilters = false) => {
     let categoryData = (costData[category] || []).filter(item => 
-      item.projectId === activeProject.id || !item.projectId
+      item.project_id === activeProject.id || !item.project_id
     );
     
     // Apply filters if requested
@@ -730,7 +731,7 @@ const { tenant } = useTenant();
       if (categoryFilters.maxCost) csvContent += `Max Cost: ${categoryFilters.maxCost}\n`;
       if (categoryFilters.minHours) csvContent += `Min Hours: ${categoryFilters.minHours}\n`;
       if (categoryFilters.maxHours) csvContent += `Max Hours: ${categoryFilters.maxHours}\n`;
-      if (categoryFilters.inSystem !== 'all') csvContent += `In System: ${categoryFilters.inSystem === 'true' ? 'Yes' : 'No'}\n`;
+      if (categoryFilters.in_system !== 'all') csvContent += `In System: ${categoryFilters.in_system === 'true' ? 'Yes' : 'No'}\n`;
       csvContent += `\nTotal Records: ${categoryData.length}\n\n`;
     }
     
@@ -746,12 +747,12 @@ const { tenant } = useTenant();
     } else if (category === 'others') {
       csvContent += "Date,Vendor,Description,Invoice Number,Cost,In System\n";
       categoryData.forEach(item => {
-        csvContent += `${item.date},${item.vendor || ''},${item.description || ''},${item.invoiceNumber},${item.cost},${item.inSystem ? 'Yes' : 'No'}\n`;
+        csvContent += `${item.date},${item.vendor || ''},${item.description || ''},${item.invoice_number},${item.cost},${item.in_system ? 'Yes' : 'No'}\n`;
       });
     } else {
       csvContent += "Date,Vendor/Subcontractor,Invoice Number,Cost,In System\n";
       categoryData.forEach(item => {
-        csvContent += `${item.date},${item.vendor || item.subcontractorName},${item.invoiceNumber},${item.cost},${item.inSystem ? 'Yes' : 'No'}\n`;
+        csvContent += `${item.date},${item.vendor || item.subcontractorName},${item.invoice_number},${item.cost},${item.in_system ? 'Yes' : 'No'}\n`;
       });
     }
     
@@ -768,7 +769,7 @@ const { tenant } = useTenant();
 
   // Export filtered invoices
   const exportFilteredInvoices = () => {
-    const projectInvoices = customerInvoices.filter(inv => inv.projectId === activeProject.id);
+    const projectInvoices = customerInvoices.filter(inv => inv.project_id === activeProject.id);
     const filteredInvoices = applyInvoiceFilters(projectInvoices);
     
     let csvContent = `Customer Invoices Export - ${activeProject.jobName}_filtered\n\n`;
@@ -778,14 +779,14 @@ const { tenant } = useTenant();
     csvContent += "Applied Filters:\n";
     if (invoiceFilters.startDate) csvContent += `Start Date: ${invoiceFilters.startDate}\n`;
     if (invoiceFilters.endDate) csvContent += `End Date: ${invoiceFilters.endDate}\n`;
-    if (invoiceFilters.invoiceNumber) csvContent += `Invoice Number: ${invoiceFilters.invoiceNumber}\n`;
+    if (invoiceFilters.invoice_number) csvContent += `Invoice Number: ${invoiceFilters.invoice_number}\n`;
     if (invoiceFilters.minAmount) csvContent += `Min Amount: ${invoiceFilters.minAmount}\n`;
     if (invoiceFilters.maxAmount) csvContent += `Max Amount: ${invoiceFilters.maxAmount}\n`;
     csvContent += `\nTotal Records: ${filteredInvoices.length}\n\n`;
     
     csvContent += "Invoice Number,Amount,Date Billed\n";
     filteredInvoices.forEach(invoice => {
-      csvContent += `${invoice.invoiceNumber},${invoice.amount},${invoice.dateBilled}\n`;
+      csvContent += `${invoice.invoice_number},${invoice.amount},${invoice.date_billed}\n`;
     });
     
     const totalFiltered = filteredInvoices.reduce((sum, inv) => sum + inv.amount, 0);
@@ -813,18 +814,18 @@ const { tenant } = useTenant();
           return [
             { name: 'date', label: 'Date', type: 'date' },
             { name: 'vendor', label: 'Vendor', type: 'text' },
-            { name: 'invoiceNumber', label: 'Invoice Number', type: 'text' },
+            { name: 'invoice_number', label: 'Invoice Number', type: 'text' },
             { name: 'cost', label: 'Cost', type: 'number' },
-            { name: 'inSystem', label: 'In System', type: 'checkbox' }
+            { name: 'in_system', label: 'In System', type: 'checkbox' }
           ];
         case 'others':
           return [
             { name: 'date', label: 'Date', type: 'date' },
             { name: 'vendor', label: 'Vendor', type: 'text' },
-            { name: 'invoiceNumber', label: 'Invoice Number', type: 'text' },
+            { name: 'invoice_number', label: 'Invoice Number', type: 'text' },
             { name: 'description', label: 'Description', type: 'text' },
             { name: 'cost', label: 'Cost', type: 'number' },
-            { name: 'inSystem', label: 'In System', type: 'checkbox' }
+            { name: 'in_system', label: 'In System', type: 'checkbox' }
           ];
         case 'labor':
           return [
@@ -845,9 +846,9 @@ const { tenant } = useTenant();
             { name: 'subcontractorName', label: 'Subcontractor Name', type: 'text' },
             { name: 'date', label: 'Date', type: 'date' },
             { name: 'vendor', label: 'Vendor', type: 'text' },
-            { name: 'invoiceNumber', label: 'Invoice Number', type: 'text' },
+            { name: 'invoice_number', label: 'Invoice Number', type: 'text' },
             { name: 'cost', label: 'Cost', type: 'number' },
-            { name: 'inSystem', label: 'In System', type: 'checkbox' }
+            { name: 'in_system', label: 'In System', type: 'checkbox' }
           ];
         default:
           return [];
@@ -1017,7 +1018,7 @@ const { tenant } = useTenant();
             { name: 'vendor', label: 'Vendor Contains', type: 'text' },
             { name: 'minCost', label: 'Min Cost', type: 'number' },
             { name: 'maxCost', label: 'Max Cost', type: 'number' },
-            { name: 'inSystem', label: 'In System Status', type: 'select', options: [
+            { name: 'in_system', label: 'In System Status', type: 'select', options: [
               { value: 'all', label: 'All' },
               { value: 'true', label: 'In System' },
               { value: 'false', label: 'Pending' }
@@ -1039,7 +1040,7 @@ const { tenant } = useTenant();
             { name: 'vendor', label: 'Vendor Contains', type: 'text' },
             { name: 'minCost', label: 'Min Cost', type: 'number' },
             { name: 'maxCost', label: 'Max Cost', type: 'number' },
-            { name: 'inSystem', label: 'In System Status', type: 'select', options: [
+            { name: 'in_system', label: 'In System Status', type: 'select', options: [
               { value: 'all', label: 'All' },
               { value: 'true', label: 'In System' },
               { value: 'false', label: 'Pending' }
@@ -1049,7 +1050,7 @@ const { tenant } = useTenant();
           return [
             { name: 'startDate', label: 'Start Date', type: 'date' },
             { name: 'endDate', label: 'End Date', type: 'date' },
-            { name: 'invoiceNumber', label: 'Invoice Number Contains', type: 'text' },
+            { name: 'invoice_number', label: 'Invoice Number Contains', type: 'text' },
             { name: 'minAmount', label: 'Min Amount', type: 'number' },
             { name: 'maxAmount', label: 'Max Amount', type: 'number' }
           ];
@@ -1084,10 +1085,10 @@ const { tenant } = useTenant();
                 onClick={() => {
                   clearFilters(category);
                   setLocalFilters(category === 'invoices' 
-                    ? { startDate: '', endDate: '', invoiceNumber: '', minAmount: '', maxAmount: '' }
+                    ? { startDate: '', endDate: '', invoice_number: '', minAmount: '', maxAmount: '' }
                     : category === 'labor' 
                       ? { startDate: '', endDate: '', employeeName: '', minHours: '', maxHours: '' }
-                      : { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', inSystem: 'all', ...(category === 'subcontractor' && { subcontractorName: '' }) }
+                      : { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', in_system: 'all', ...(category === 'subcontractor' && { subcontractorName: '' }) }
                   );
                   if (onClearFilters) onClearFilters();
                 }}
@@ -1465,12 +1466,12 @@ const { tenant } = useTenant();
     const [showForm, setShowForm] = useState(false);
     const [editingInvoice, setEditingInvoice] = useState(null);
     const [newInvoice, setNewInvoice] = useState({
-      invoiceNumber: '',
+      invoice_number: '',
       amount: 0,
-      dateBilled: ''
+      date_billed: ''
     });
 
-    const projectInvoices = customerInvoices.filter(inv => inv.projectId === activeProject?.id);
+    const projectInvoices = customerInvoices.filter(inv => inv.project_id === activeProject?.id);
     const filteredInvoices = applyInvoiceFilters(projectInvoices);
     const totalBilled = filteredInvoices.reduce((sum, inv) => sum + inv.amount, 0);
 
@@ -1488,7 +1489,7 @@ const { tenant } = useTenant();
         }
         setShowForm(false);
         setEditingInvoice(null);
-        setNewInvoice({ invoiceNumber: '', amount: 0, dateBilled: '' });
+        setNewInvoice({ invoice_number: '', amount: 0, date_billed: '' });
       } catch (error) {
         console.error('Error saving invoice:', error);
       }
@@ -1566,10 +1567,10 @@ const { tenant } = useTenant();
                 <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Number</label>
                 <input
                   type="text"
-                  value={editingInvoice ? editingInvoice.invoiceNumber : newInvoice.invoiceNumber}
+                  value={editingInvoice ? editingInvoice.invoice_number : newInvoice.invoice_number}
                   onChange={(e) => editingInvoice 
-                    ? setEditingInvoice({...editingInvoice, invoiceNumber: e.target.value})
-                    : setNewInvoice({...newInvoice, invoiceNumber: e.target.value})
+                    ? setEditingInvoice({...editingInvoice, invoice_number: e.target.value})
+                    : setNewInvoice({...newInvoice, invoice_number: e.target.value})
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
@@ -1592,10 +1593,10 @@ const { tenant } = useTenant();
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date Billed</label>
                 <input
                   type="date"
-                  value={editingInvoice ? editingInvoice.dateBilled : newInvoice.dateBilled}
+                  value={editingInvoice ? editingInvoice.date_billed : newInvoice.date_billed}
                   onChange={(e) => editingInvoice 
-                    ? setEditingInvoice({...editingInvoice, dateBilled: e.target.value})
-                    : setNewInvoice({...newInvoice, dateBilled: e.target.value})
+                    ? setEditingInvoice({...editingInvoice, date_billed: e.target.value})
+                    : setNewInvoice({...newInvoice, date_billed: e.target.value})
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
@@ -1633,7 +1634,7 @@ const { tenant } = useTenant();
                 onClick={() => {
                   setShowForm(false);
                   setEditingInvoice(null);
-                  setNewInvoice({ invoiceNumber: '', amount: 0, dateBilled: '' });
+                  setNewInvoice({ invoice_number: '', amount: 0, date_billed: '' });
                 }}
                 className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
               >
@@ -1659,9 +1660,9 @@ const { tenant } = useTenant();
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredInvoices.map((invoice) => (
                   <tr key={invoice.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{invoice.invoiceNumber}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{invoice.invoice_number}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${invoice.amount.toLocaleString()}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{invoice.dateBilled}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{invoice.date_billed}</td>
                     {canWrite && (
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <button
@@ -1848,7 +1849,7 @@ const { tenant } = useTenant();
     const variances = totals.variances || {};
     
     const allCategoryData = (costData[category] || []).filter(item => 
-      item.projectId === activeProject?.id || !item.projectId
+      item.project_id === activeProject?.id || !item.project_id
     );
     const filteredCategoryData = applyFilters(allCategoryData, category);
 
@@ -2027,11 +2028,11 @@ const { tenant } = useTenant();
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.date}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.vendor || item.subcontractorName}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.description || '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.invoiceNumber}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.invoice_number}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.cost?.toLocaleString()}</td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 text-xs rounded-full ${item.inSystem ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                            {item.inSystem ? 'In System' : 'Pending'}
+                          <span className={`px-2 py-1 text-xs rounded-full ${item.in_system ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                            {item.in_system ? 'In System' : 'Pending'}
                           </span>
                         </td>
                       </>
@@ -2039,11 +2040,11 @@ const { tenant } = useTenant();
                       <>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.date}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.vendor || item.subcontractorName}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.invoiceNumber}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.invoice_number}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.cost?.toLocaleString()}</td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 text-xs rounded-full ${item.inSystem ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                            {item.inSystem ? 'In System' : 'Pending'}
+                          <span className={`px-2 py-1 text-xs rounded-full ${item.in_system ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                            {item.in_system ? 'In System' : 'Pending'}
                           </span>
                         </td>
                       </>

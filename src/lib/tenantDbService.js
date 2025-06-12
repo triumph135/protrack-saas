@@ -273,7 +273,7 @@ class TenantDbService {
     }
   }
 
-// Costs with tenant isolation
+  // Costs with tenant isolation
   costs = {
     getByProject: async (category, projectId) => {
       if (!this.currentTenant) throw new Error('No tenant context')
