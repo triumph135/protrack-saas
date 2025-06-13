@@ -119,9 +119,10 @@ const BudgetVsActualReport = ({
         const otCost = (item.otHours || 0) * (item.otRate || 0);
         const dtCost = (item.dtHours || 0) * (item.dtRate || 0);
         const perDiem = item.perDiem || 0;
-        return sum + stCost + otCost + dtCost + perDiem;
+        const mobCost = (item.mobQty || 0) * (item.mobRate || 0);
+        return sum + stCost + otCost + dtCost + perDiem + mobCost;
       } else {
-        return sum + (item.cost || 0);
+         return sum + (item.cost || 0);
       }
     }, 0);
   };
@@ -202,6 +203,15 @@ const BudgetVsActualReport = ({
     } else {
       csvContent += `Category,Budget,Actual,Variance,Percent Used\n`;
       csvContent += `${reportData.category},${reportData.budget},${reportData.actual},${reportData.variance},${reportData.percentUsed.toFixed(1)}%\n`;
+      // If category is labor, append a detailed labor breakdown (including MOB fields) CSV table.
+      if (reportData.category === 'labor' && reportData.details && reportData.details.length > 0) {
+        csvContent += "\nDetailed Labor Breakdown\n";
+        csvContent += "Date,Employee,ST Hours,ST Rate,OT Hours,OT Rate,DT Hours,DT Rate,Per Diem,MOB Quantity,MOB Rate,Total Cost\n";
+        reportData.details.forEach(item => {
+          const totalCost = ((item.stHours || 0) * (item.stRate || 0)) + ((item.otHours || 0) * (item.otRate || 0)) + ((item.dtHours || 0) * (item.dtRate || 0)) + (item.perDiem || 0) + ((item.mobQty || 0) * (item.mobRate || 0));
+          csvContent += `${item.date},${item.employeeName},${item.stHours},${item.stRate || 0},${item.otHours},${item.otRate || 0},${item.dtHours},${item.dtRate || 0},${item.perDiem},${item.mobQty || 0},${item.mobRate || 0},${totalCost}\n`;
+        });
+      }
     }
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

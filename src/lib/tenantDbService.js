@@ -4,6 +4,23 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
 const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY
 
+function mapLaborDbToApp(item) {
+  return {
+    ...item,
+    stHours: item.st_hours,
+    stRate: item.st_rate,
+    otHours: item.ot_hours,
+    otRate: item.ot_rate,
+    dtHours: item.dt_hours,
+    dtRate: item.dt_rate,
+    perDiem: item.per_diem,
+    employeeName: item.employee_name,
+    employee_id: item.employee_id,
+    mobQty: item.mob_qty ?? 0,
+    mobRate: item.mob_rate ?? 0,
+  };
+}
+
 class TenantDbService {
   constructor() {
     this.supabase = createClient(supabaseUrl, supabaseKey)
@@ -282,7 +299,6 @@ class TenantDbService {
   costs = {
     getByProject: async (category, projectId, changeOrderId = null) => {
       if (!this.currentTenant) throw new Error('No tenant context')
-      
       let query = this.supabase
         .from('project_costs')
         .select('*')
@@ -290,19 +306,19 @@ class TenantDbService {
         .eq('project_id', projectId)
         .eq('tenant_id', this.currentTenant)
         .order('date', { ascending: false })
-      
       if (changeOrderId !== null) {
         query = query.eq('change_order_id', changeOrderId)
       }
-      
       const { data, error } = await query
       if (error) throw error
+      if (category === 'labor') {
+        return data.map(mapLaborDbToApp)
+      }
       return data
     },
 
     create: async (category, costData) => {
       if (!this.currentTenant) throw new Error('No tenant context')
-      
       const { data, error } = await this.supabase
         .from('project_costs')
         .insert([{ 
@@ -312,14 +328,15 @@ class TenantDbService {
         }])
         .select()
         .single()
-      
       if (error) throw error
+      if (category === 'labor') {
+        return mapLaborDbToApp(data)
+      }
       return data
     },
 
     update: async (category, costId, updates) => {
       if (!this.currentTenant) throw new Error('No tenant context')
-      
       const { data, error } = await this.supabase
         .from('project_costs')
         .update(updates)
@@ -327,8 +344,10 @@ class TenantDbService {
         .eq('tenant_id', this.currentTenant)
         .select()
         .single()
-      
       if (error) throw error
+      if (category === 'labor') {
+        return mapLaborDbToApp(data)
+      }
       return data
     },
 

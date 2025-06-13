@@ -15,6 +15,8 @@ import TenantRegistration from './components/TenantRegistration';
 import Logo from './components/Logo';
 import FileAttachments from './components/FileAttachments';
 import BudgetVsActualReport from './components/BudgetVsActualReport';
+import EmployeeManagement from './components/EmployeeManagement';
+import { dbService, supabase } from './lib/supabase';
 
 const ProjectTrackingApp = () => {
   // Authentication
@@ -70,6 +72,21 @@ const ProjectTrackingApp = () => {
     consumable: { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', in_system: 'all' },
     invoices: { startDate: '', endDate: '', invoice_number: '', minAmount: '', maxAmount: '' }
   });
+
+  // Add at the top level of ProjectTrackingApp
+  const [allEmployees, setAllEmployees] = useState([]);
+  useEffect(() => {
+    if (tenant?.id && activeProject?.id) {
+      supabase
+        .from('employees')
+        .select('*')
+        .eq('tenant_id', tenant.id)
+        .or(`project_id.eq.${activeProject.id},project_id.is.null`)
+        .then(({ data, error }) => {
+          if (!error) setAllEmployees(data);
+        });
+    }
+  }, [tenant?.id, activeProject?.id]);
 
   // Load data when user logs in or active project changes
   useEffect(() => {
@@ -594,7 +611,8 @@ const ProjectTrackingApp = () => {
           const otCost = (item.otHours || 0) * (item.otRate || 0);
           const dtCost = (item.dtHours || 0) * (item.dtRate || 0);
           const perDiem = item.perDiem || 0;
-          return sum + stCost + otCost + dtCost + perDiem;
+          const mobCost = (item.mobQty || 0) * (item.mobRate || 0);
+          return sum + stCost + otCost + dtCost + perDiem + mobCost;
         }, 0);
     } else {
       // Regular calculation for other categories
@@ -655,8 +673,8 @@ const ProjectTrackingApp = () => {
   // Export functions (keeping original implementations)
   const exportToPDF = () => {
     const totals = calculateTotals();
-    
-    const reportContent = `
+    const laborData = (costData.labor || []).filter(item => (item.project_id === activeProject.id || !item.project_id));
+    let reportContent = `
       PROJECT PERFORMANCE REPORT
       ==========================
       
@@ -682,6 +700,15 @@ const ProjectTrackingApp = () => {
       Gross Profit: ${totals.grossProfit.toLocaleString()}
       Profit Margin: ${((totals.grossProfit / totals.totalBilledToDate) * 100).toFixed(1)}%
     `;
+    // Append detailed labor breakdown (including MOB fields) if labor data exists
+    if (laborData.length > 0) {
+      reportContent += "\n\nDETAILED LABOR BREAKDOWN:\n" + ("=".repeat(50)) + "\n";
+      reportContent += "Date\t\tEmployee\t\tST Hours\tST Rate\tOT Hours\tOT Rate\tDT Hours\tDT Rate\tPer Diem\tMOB Qty\tMOB Rate\tTotal Cost\n";
+      laborData.forEach(item => {
+         const totalCost = ((item.stHours || 0) * (item.stRate || 0)) + ((item.otHours || 0) * (item.otRate || 0)) + ((item.dtHours || 0) * (item.dtRate || 0)) + (item.perDiem || 0) + ((item.mobQty || 0) * (item.mobRate || 0));
+         reportContent += `${item.date}\t\t${item.employeeName}\t\t${item.stHours}\t${item.stRate || 0}\t${item.otHours}\t${item.otRate || 0}\t${item.dtHours}\t${item.dtRate || 0}\t${item.perDiem}\t${item.mobQty || 0}\t${item.mobRate || 0}\t${totalCost}\n`;
+      });
+    }
 
     const blob = new Blob([reportContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -762,13 +789,14 @@ const ProjectTrackingApp = () => {
     }
     
     if (category === 'labor') {
-      csvContent += "Date,Employee Name,ST Hours,ST Rate,OT Hours,OT Rate,DT Hours,DT Rate,Per Diem,Total Cost\n";
+      csvContent += "Date,Employee Name,ST Hours,ST Rate,OT Hours,OT Rate,DT Hours,DT Rate,Per Diem,MOB Quantity,MOB Rate,Total Cost\n";
       categoryData.forEach(item => {
         const totalCost = ((item.stHours || 0) * (item.stRate || 0)) + 
                         ((item.otHours || 0) * (item.otRate || 0)) + 
                         ((item.dtHours || 0) * (item.dtRate || 0)) + 
-                        (item.perDiem || 0);
-        csvContent += `${item.date},${item.employeeName},${item.stHours},${item.stRate || 0},${item.otHours},${item.otRate || 0},${item.dtHours},${item.dtRate || 0},${item.perDiem},${totalCost}\n`;
+                        (item.perDiem || 0) + 
+                        ((item.mobQty || 0) * (item.mobRate || 0));
+        csvContent += `${item.date},${item.employeeName},${item.stHours},${item.stRate || 0},${item.otHours},${item.otRate || 0},${item.dtHours},${item.dtRate || 0},${item.perDiem},${item.mobQty || 0},${item.mobRate || 0},${totalCost}\n`;
       });
     } else if (category === 'others') {
       csvContent += "Date,Vendor,Description,Invoice Number,Cost,In System\n";
@@ -832,6 +860,54 @@ const ProjectTrackingApp = () => {
   // Component for rendering cost entry forms
   const CostEntryForm = ({ category, onSave, editItem = null, changeOrders = [] }) => {
     const [formData, setFormData] = useState(editItem || {});
+    useEffect(() => {
+      if (editItem) {
+        setFormData({
+          ...editItem,
+          mobQty: editItem.mobQty ?? 0,
+          mobRate: editItem.mobRate ?? 0,
+        });
+      } else {
+        setFormData({});
+      }
+    }, [editItem]);
+    const [employees, setEmployees] = useState([]);
+    const [employeeLoading, setEmployeeLoading] = useState(false);
+    const [employeeError, setEmployeeError] = useState('');
+
+    useEffect(() => {
+      if (category === 'labor' && tenant?.id && activeProject?.id) {
+        setEmployeeLoading(true);
+        supabase
+          .from('employees')
+          .select('*')
+          .eq('tenant_id', tenant.id)
+          .or(`project_id.eq.${activeProject.id},project_id.is.null`)
+          .order('name', { ascending: true })
+          .then(({ data, error }) => {
+            if (error) setEmployeeError('Failed to load employees');
+            else setEmployees(data);
+          })
+          .finally(() => setEmployeeLoading(false));
+      }
+    }, [category, tenant?.id, activeProject?.id]);
+
+    const handleEmployeeChange = (e) => {
+      const empId = e.target.value;
+      setFormData({ ...formData, employee_id: empId });
+      const emp = employees.find(emp => emp.id === empId);
+      if (emp) {
+        setFormData(fd => ({
+          ...fd,
+          stRate: emp.standard_rate,
+          otRate: emp.ot_rate,
+          dtRate: emp.dt_rate,
+          employeeName: emp.name, // for display/legacy
+          mobQty: emp.mob_qty,
+          mobRate: emp.mob_rate
+        }));
+      }
+    };
 
     const getFormFields = () => {
       switch (category) {
@@ -855,7 +931,7 @@ const ProjectTrackingApp = () => {
           ];
         case 'labor':
           return [
-            { name: 'employeeName', label: 'Employee Name', type: 'text' },
+            { name: 'employee_id', label: 'Employee', type: 'select', options: employees },
             { name: 'date', label: 'Date', type: 'date' },
             { name: 'stHours', label: 'ST Hours', type: 'number' },
             { name: 'stRate', label: 'ST Rate ($/hr)', type: 'number' },
@@ -863,7 +939,9 @@ const ProjectTrackingApp = () => {
             { name: 'otRate', label: 'OT Rate ($/hr)', type: 'number' },
             { name: 'dtHours', label: 'DT Hours', type: 'number' },
             { name: 'dtRate', label: 'DT Rate ($/hr)', type: 'number' },
-            { name: 'perDiem', label: 'Per Diem ($)', type: 'number' }
+            { name: 'perDiem', label: 'Per Diem ($)', type: 'number' },
+            { name: 'mobQty', label: 'MOB Quantity', type: 'number' },
+            { name: 'mobRate', label: 'MOB Rate ($)', type: 'number' }
           ];
         case 'equipment':
           return [
@@ -934,7 +1012,19 @@ const ProjectTrackingApp = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {field.label}
               </label>
-              {field.type === 'checkbox' ? (
+              {category === 'labor' && field.name === 'employee_id' ? (
+                <select
+                  value={formData.employee_id || ''}
+                  onChange={handleEmployeeChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                >
+                  <option value="">Select Employee</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>{emp.name}</option>
+                  ))}
+                </select>
+              ) : field.type === 'checkbox' ? (
                 <input
                   type="checkbox"
                   checked={formData[field.name] || false}
@@ -946,10 +1036,13 @@ const ProjectTrackingApp = () => {
                   type={field.type}
                   value={formData[field.name] || ''}
                   onChange={(e) => setFormData({...formData, [field.name]: 
-                    field.type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value
+                    field.type === 'number' ? (e.target.value === '' ? '' : parseFloat(e.target.value)) : e.target.value
                   })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
+                  step={field.type === 'number' ? '0.1' : undefined}
+                  min={field.type === 'number' ? '0' : undefined}
+                  disabled={category === 'labor' && ['stRate','otRate','dtRate'].includes(field.name) && !formData.employee_id}
                 />
               )}
             </div>
@@ -1976,7 +2069,8 @@ const ProjectTrackingApp = () => {
         const otCost = (item.otHours || 0) * (item.otRate || 0);
         const dtCost = (item.dtHours || 0) * (item.dtRate || 0);
         const perDiem = item.perDiem || 0;
-        return sum + stCost + otCost + dtCost + perDiem;
+        const mobCost = (item.mobQty || 0) * (item.mobRate || 0);
+        return sum + stCost + otCost + dtCost + perDiem + mobCost;
       } else {
         return sum + (item.cost || 0);
       }
@@ -2085,6 +2179,8 @@ const ProjectTrackingApp = () => {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OT Hours</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DT Hours</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Per Diem</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MOB Quantity</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MOB Rate</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Cost</th>
                     </>
                   ) : category === 'others' ? (
@@ -2115,17 +2211,26 @@ const ProjectTrackingApp = () => {
                   <tr key={item.id} className="hover:bg-gray-50">
                     {category === 'labor' ? (
                       <>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.employeeName}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{((() => {
+                          if (item.employee_id) {
+                            const emp = allEmployees.find(e => e.id === item.employee_id);
+                            return emp ? emp.name : '(Unknown)';
+                          }
+                          return item.employeeName || '(Unknown)';
+                        })())}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.date}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.stHours} @ ${item.stRate || 0}/hr</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.otHours} @ ${item.otRate || 0}/hr</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.dtHours} @ ${item.dtRate || 0}/hr</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.perDiem || 0}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.mob_qty || 0}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.mob_rate || 0}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
                           ${(((item.stHours || 0) * (item.stRate || 0)) + 
                             ((item.otHours || 0) * (item.otRate || 0)) + 
                             ((item.dtHours || 0) * (item.dtRate || 0)) + 
-                            (item.perDiem || 0)).toLocaleString()}
+                            (item.perDiem || 0) + 
+                            ((item.mob_qty || 0) * (item.mob_rate || 0))).toLocaleString()}
                         </td>
                       </>
                     ) : category === 'others' ? (
@@ -2472,6 +2577,8 @@ const ProjectTrackingApp = () => {
     
     const [allProjects, setAllProjects] = useState([]);
     const [statusFilter, setStatusFilter] = useState('all'); // all, Active, Inactive, etc.
+    const [showEmployeeModal, setShowEmployeeModal] = useState(false);
+    const [employeeModalProject, setEmployeeModalProject] = useState(null);
 
     // Load all projects (including inactive) for management view
     useEffect(() => {
@@ -2624,6 +2731,7 @@ const ProjectTrackingApp = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contract Value</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employees</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -2684,6 +2792,14 @@ const ProjectTrackingApp = () => {
                         </button>
                       </>
                     )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <button
+                      onClick={() => { setEmployeeModalProject(project); setShowEmployeeModal(true); }}
+                      className="text-indigo-600 hover:text-indigo-900"
+                    >
+                      Edit Employees
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -2810,6 +2926,20 @@ const ProjectTrackingApp = () => {
         {activeProject && (
           <div className="bg-white rounded-lg shadow-md overflow-hidden mt-8">
             <ChangeOrdersSection activeProject={activeProject} />
+          </div>
+        )}
+        {showEmployeeModal && employeeModalProject && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg w-full max-w-2xl relative">
+              <button
+                onClick={() => { setShowEmployeeModal(false); setEmployeeModalProject(null); }}
+                className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 text-2xl"
+                title="Close"
+              >
+                &times;
+              </button>
+              <EmployeeManagement tenantId={tenant?.id} projectId={employeeModalProject?.id} />
+            </div>
           </div>
         )}
       </div>
@@ -3144,7 +3274,7 @@ const ChangeOrdersSection = ({ activeProject }) => {
 
 const mapCostFormDataToDb = (category, formData) => {
   const mapping = {
-    labor: { employeeName: 'employee_name', stHours: 'st_hours', stRate: 'st_rate', otHours: 'ot_hours', otRate: 'ot_rate', dtHours: 'dt_hours', dtRate: 'dt_rate', perDiem: 'per_diem' },
+    labor: { employee_id: 'employee_id', employeeName: 'employee_name', stHours: 'st_hours', stRate: 'st_rate', otHours: 'ot_hours', otRate: 'ot_rate', dtHours: 'dt_hours', dtRate: 'dt_rate', perDiem: 'per_diem', mobQty: 'mob_qty', mobRate: 'mob_rate' },
     subcontractor: { subcontractor_name: 'subcontractor_name' },
     // Add more mappings as needed
   };

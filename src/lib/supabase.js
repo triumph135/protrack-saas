@@ -283,7 +283,8 @@ export const dbService = {
       if (category === 'labor') {
         return {
           ...baseData,
-          employee_name: item.employeeName,
+          employee_id: item.employee_id || null,
+          employee_name: item.employeeName || '',
           date: item.date,
           st_hours: item.stHours || 0,
           st_rate: item.stRate || 0,
@@ -326,6 +327,7 @@ export const dbService = {
       if (category === 'labor') {
         return {
           ...baseFormat,
+          employee_id: dbItem.employee_id,
           employeeName: dbItem.employee_name,
           stHours: dbItem.st_hours,
           stRate: dbItem.st_rate,
