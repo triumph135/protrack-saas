@@ -218,16 +218,21 @@ class TenantDbService {
 
   // Invoices with tenant isolation
   invoices = {
-    getByProject: async (projectId) => {
+    getByProject: async (projectId, changeOrderId = null) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      let query = this.supabase
         .from('customer_invoices')
         .select('*')
         .eq('project_id', projectId)
         .eq('tenant_id', this.currentTenant)
         .order('date_billed', { ascending: false })
       
+      if (changeOrderId !== null) {
+        query = query.eq('change_order_id', changeOrderId)
+      }
+      
+      const { data, error } = await query
       if (error) throw error
       return data
     },
@@ -275,10 +280,10 @@ class TenantDbService {
 
   // Costs with tenant isolation
   costs = {
-    getByProject: async (category, projectId) => {
+    getByProject: async (category, projectId, changeOrderId = null) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      let query = this.supabase
         .from('project_costs')
         .select('*')
         .eq('category', category)
@@ -286,6 +291,11 @@ class TenantDbService {
         .eq('tenant_id', this.currentTenant)
         .order('date', { ascending: false })
       
+      if (changeOrderId !== null) {
+        query = query.eq('change_order_id', changeOrderId)
+      }
+      
+      const { data, error } = await query
       if (error) throw error
       return data
     },
@@ -414,6 +424,99 @@ class TenantDbService {
       if (error) throw error
       return data
     }
+  }
+
+  // Change Orders
+  changeOrders = {
+    getAllByProject: async (projectId) => {
+      if (!this.currentTenant) throw new Error('No tenant context');
+      const { data, error } = await this.supabase
+        .from('change_orders')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('tenant_id', this.currentTenant)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+    create: async (projectId, changeOrderData) => {
+      if (!this.currentTenant) throw new Error('No tenant context');
+      const { data, error } = await this.supabase
+        .from('change_orders')
+        .insert([{ ...changeOrderData, project_id: projectId, tenant_id: this.currentTenant }])
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    update: async (id, updates) => {
+      if (!this.currentTenant) throw new Error('No tenant context');
+      const { data, error } = await this.supabase
+        .from('change_orders')
+        .update(updates)
+        .eq('id', id)
+        .eq('tenant_id', this.currentTenant)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    delete: async (id) => {
+      if (!this.currentTenant) throw new Error('No tenant context');
+      const { error } = await this.supabase
+        .from('change_orders')
+        .delete()
+        .eq('id', id)
+        .eq('tenant_id', this.currentTenant);
+      if (error) throw error;
+    }
+  }
+
+  // Change Order Budgets
+  changeOrderBudgets = {
+    getByChangeOrder: async (changeOrderId) => {
+      if (!this.currentTenant) throw new Error('No tenant context');
+      const { data, error } = await this.supabase
+        .from('change_order_budgets')
+        .select('*')
+        .eq('change_order_id', changeOrderId)
+        .order('category', { ascending: true });
+      if (error) throw error;
+      return data;
+    },
+    update: async (changeOrderId, category, amount) => {
+      if (!this.currentTenant) throw new Error('No tenant context');
+      // Upsert budget for this change order/category
+      const { data, error } = await this.supabase
+        .from('change_order_budgets')
+        .upsert({ change_order_id: changeOrderId, category, budget: amount }, { onConflict: ['change_order_id', 'category'] })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    }
+  }
+
+  // Move createDefaultBudget to be a regular class method
+  async createDefaultBudget(projectId) {
+    if (!this.currentTenant) throw new Error('No tenant context')
+    const { data, error } = await this.supabase
+      .from('project_budgets')
+      .insert([{
+        tenant_id: this.currentTenant,
+        project_id: projectId,
+        material_budget: 0,
+        labor_budget: 0,
+        equipment_budget: 0,
+        subcontractor_budget: 0,
+        others_budget: 0,
+        cap_leases_budget: 0,
+        consumable_budget: 0
+      }])
+      .select()
+      .single()
+    if (error) throw error
+    return data
   }
 }
 

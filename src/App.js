@@ -2,9 +2,9 @@
 // A React application for tracking project costs, invoices, and user management
 import React, { useState, useEffect } from 'react';
 import { 
-  Users, Plus, Edit, Trash2, Save, X, BarChart3, DollarSign, 
+  Plus, Edit, Trash2, Save, X, BarChart3, DollarSign, 
   Building, Calendar, Wrench, User, FileText, Settings, 
-  Download, Upload, Search, Filter, Eye, EyeOff, Lock, LogOut 
+  Download, Filter, Eye, Lock, LogOut 
 } from 'lucide-react';
 import { useAuth } from './hooks/useAuth'; 
 import LoginPage from './components/LoginPage'; 
@@ -19,7 +19,7 @@ import BudgetVsActualReport from './components/BudgetVsActualReport';
 const ProjectTrackingApp = () => {
   // Authentication
   const { user, loading: authLoading, signIn, signUp, signOut } = useTenantAuth();
-const { tenant } = useTenant();
+  const { tenant } = useTenant();
 
   // State management
   const [projects, setProjects] = useState([]);
@@ -33,6 +33,9 @@ const { tenant } = useTenant();
   const [editingProject, setEditingProject] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showBudgetReport, setShowBudgetReport] = useState(false);
+  const [changeOrders, setChangeOrders] = useState([]);
+  // Add selectedChangeOrder state at the top level
+  const [selectedChangeOrder, setSelectedChangeOrder] = useState('all');
 
   // Cost categories data structure
   const [costData, setCostData] = useState({
@@ -155,6 +158,29 @@ const { tenant } = useTenant();
       console.error('Error loading project data:', error);
     }
   };
+
+  // Set tenant context for tenantDbService
+  useEffect(() => {
+    if (tenant?.id) {
+      tenantDbService.setTenant(tenant.id);
+    }
+  }, [tenant]);
+
+  useEffect(() => {
+    const fetchChangeOrders = async () => {
+      if (activeProject) {
+        try {
+          const data = await tenantDbService.changeOrders.getAllByProject(activeProject.id);
+          setChangeOrders(data);
+        } catch (error) {
+          setChangeOrders([]);
+        }
+      } else {
+        setChangeOrders([]);
+      }
+    };
+    fetchChangeOrders();
+  }, [activeProject]);
 
   // Show login page if not authenticated
   if (authLoading) {
@@ -345,12 +371,12 @@ const { tenant } = useTenant();
   const handleCreateCost = async (category, costData) => {
     try {
       setLoading(true);
+      const mappedData = mapCostFormDataToDb(category, costData);
       const newCost = await tenantDbService.costs.create(category, {
-        ...costData,
-        projectId: activeProject.id,
+        ...mappedData,
+        project_id: activeProject.id,
         in_system: true
       });
-      
       setCostData(prev => ({
         ...prev,
         [category]: [...prev[category], newCost]
@@ -366,8 +392,8 @@ const { tenant } = useTenant();
   const handleUpdateCost = async (category, id, updates) => {
     try {
       setLoading(true);
-      const updatedCost = await tenantDbService.costs.update(category, id, updates);
-      
+      const mappedUpdates = mapCostFormDataToDb(category, updates);
+      const updatedCost = await tenantDbService.costs.update(category, id, mappedUpdates);
       setCostData(prev => ({
         ...prev,
         [category]: prev[category].map(item => 
@@ -804,7 +830,7 @@ const { tenant } = useTenant();
   };
 
   // Component for rendering cost entry forms
-  const CostEntryForm = ({ category, onSave, editItem = null }) => {
+  const CostEntryForm = ({ category, onSave, editItem = null, changeOrders = [] }) => {
     const [formData, setFormData] = useState(editItem || {});
 
     const getFormFields = () => {
@@ -840,10 +866,24 @@ const { tenant } = useTenant();
             { name: 'perDiem', label: 'Per Diem ($)', type: 'number' }
           ];
         case 'equipment':
+          return [
+            { name: 'date', label: 'Date', type: 'date' },
+            { name: 'vendor', label: 'Vendor', type: 'text' },
+            { name: 'invoice_number', label: 'Invoice Number', type: 'text' },
+            { name: 'cost', label: 'Cost', type: 'number' },
+            { name: 'in_system', label: 'In System', type: 'checkbox' }
+          ];
         case 'subcontractor':
+          return [
+            { name: 'subcontractor_name', label: 'Subcontractor Name', type: 'text' },
+            { name: 'date', label: 'Date', type: 'date' },
+            { name: 'vendor', label: 'Vendor', type: 'text' },
+            { name: 'invoice_number', label: 'Invoice Number', type: 'text' },
+            { name: 'cost', label: 'Cost', type: 'number' },
+            { name: 'in_system', label: 'In System', type: 'checkbox' }
+          ];
         case 'consumable':
           return [
-            { name: 'subcontractorName', label: 'Subcontractor Name', type: 'text' },
             { name: 'date', label: 'Date', type: 'date' },
             { name: 'vendor', label: 'Vendor', type: 'text' },
             { name: 'invoice_number', label: 'Invoice Number', type: 'text' },
@@ -914,6 +954,21 @@ const { tenant } = useTenant();
               )}
             </div>
           ))}
+        </div>
+
+        {/* Change Order Dropdown */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Change Order</label>
+          <select
+            value={formData.change_order_id || ''}
+            onChange={e => setFormData({ ...formData, change_order_id: e.target.value || null })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Base Contract</option>
+            {changeOrders.map(co => (
+              <option key={co.id} value={co.id}>{co.name}</option>
+            ))}
+          </select>
         </div>
 
         {/* File Attachments */}
@@ -1170,6 +1225,11 @@ const { tenant } = useTenant();
   const [editingContractValue, setEditingContractValue] = useState(false);
   const [contractValueInput, setContractValueInput] = useState(activeProject?.totalContractValue || 0);
   
+  // Calculate change order total and grand total
+  const changeOrdersTotal = changeOrders.reduce((sum, co) => sum + (co.additional_contract_value || 0), 0);
+  const baseContractValue = activeProject?.totalContractValue || 0;
+  const grandTotalContractValue = baseContractValue + changeOrdersTotal;
+  
   // Handle case where no projects exist
   if (!activeProject) {
     return (
@@ -1246,44 +1306,22 @@ const { tenant } = useTenant();
         <div className="bg-white p-6 rounded-lg shadow-md">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Financial Overview</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            {/* Grand Total Contract Value */}
             <div className="bg-indigo-50 p-4 rounded-lg">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-indigo-600 text-2xl font-bold">
-                    ${editingContractValue ? contractValueInput.toLocaleString() : activeProject.totalContractValue.toLocaleString()}
+                    ${grandTotalContractValue.toLocaleString()}
                   </div>
                   <div className="text-gray-600">Total Contract Value</div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Base: ${baseContractValue.toLocaleString()}<br/>
+                    Change Orders: ${changeOrdersTotal.toLocaleString()}
+                  </div>
                 </div>
-                {hasPermission('projects', 'write') && (
-                  <button
-                    onClick={() => {
-                      if (editingContractValue) {
-                        updateContractValue(contractValueInput);
-                        setEditingContractValue(false);
-                      } else {
-                        setEditingContractValue(true);
-                      }
-                    }}
-                    className="text-indigo-600 hover:text-indigo-800"
-                  >
-                    {editingContractValue ? <Save className="w-4 h-4" /> : <Edit className="w-4 h-4" />}
-                  </button>
-                )}
+                {/* Edit button removed */}
               </div>
-              {editingContractValue && (
-                <input
-                  type="number"
-                  value={contractValueInput}
-                  onChange={(e) => setContractValueInput(parseFloat(e.target.value) || 0)}
-                  className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter') {
-                      updateContractValue(contractValueInput);
-                      setEditingContractValue(false);
-                    }
-                  }}
-                />
-              )}
+              {/* Edit input removed */}
             </div>
             <div className="bg-cyan-50 p-4 rounded-lg">
               <div className="text-cyan-600 text-2xl font-bold">${totals.totalBilledToDate.toLocaleString()}</div>
@@ -1462,16 +1500,26 @@ const { tenant } = useTenant();
   };
 
   // Customer Invoice Management View
-  const CustomerInvoiceView = () => {
+  const CustomerInvoiceView = ({ changeOrders = [], selectedChangeOrder, setSelectedChangeOrder }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingInvoice, setEditingInvoice] = useState(null);
     const [newInvoice, setNewInvoice] = useState({
       invoice_number: '',
       amount: 0,
-      date_billed: ''
+      date_billed: '',
+      change_order_id: ''
     });
 
-    const projectInvoices = customerInvoices.filter(inv => inv.project_id === activeProject?.id);
+    // Use a new variable for filtered invoices
+    const projectInvoicesRaw = customerInvoices.filter(inv => inv.project_id === activeProject?.id);
+    let projectInvoices = projectInvoicesRaw;
+    if (selectedChangeOrder !== 'all') {
+      if (selectedChangeOrder === 'base') {
+        projectInvoices = projectInvoicesRaw.filter(inv => !inv.change_order_id);
+      } else {
+        projectInvoices = projectInvoicesRaw.filter(inv => inv.change_order_id === selectedChangeOrder);
+      }
+    }
     const filteredInvoices = applyInvoiceFilters(projectInvoices);
     const totalBilled = filteredInvoices.reduce((sum, inv) => sum + inv.amount, 0);
 
@@ -1489,7 +1537,7 @@ const { tenant } = useTenant();
         }
         setShowForm(false);
         setEditingInvoice(null);
-        setNewInvoice({ invoice_number: '', amount: 0, date_billed: '' });
+        setNewInvoice({ invoice_number: '', amount: 0, date_billed: '', change_order_id: '' });
       } catch (error) {
         console.error('Error saving invoice:', error);
       }
@@ -1519,6 +1567,21 @@ const { tenant } = useTenant();
 
     return (
       <div className="space-y-6">
+        {/* Change Order Filter Dropdown - move to very top */}
+        <div className="flex items-center gap-4 mb-6">
+          <label className="text-sm font-medium text-gray-700">Change Order:</label>
+          <select
+            value={selectedChangeOrder}
+            onChange={e => setSelectedChangeOrder(e.target.value)}
+            className="px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="all">All</option>
+            <option value="base">Base Contract</option>
+            {changeOrders.map(co => (
+              <option key={co.id} value={co.id}>{co.name}</option>
+            ))}
+          </select>
+        </div>
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold text-gray-900">Customer Invoices</h2>
           <div className="flex gap-2">
@@ -1604,6 +1667,24 @@ const { tenant } = useTenant();
               </div>
             </div>
 
+            {/* Change Order Dropdown */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Change Order</label>
+              <select
+                value={editingInvoice ? editingInvoice.change_order_id || '' : newInvoice.change_order_id || ''}
+                onChange={e => editingInvoice
+                  ? setEditingInvoice({ ...editingInvoice, change_order_id: e.target.value || null })
+                  : setNewInvoice({ ...newInvoice, change_order_id: e.target.value || null })
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Base Contract</option>
+                {changeOrders.map(co => (
+                  <option key={co.id} value={co.id}>{co.name}</option>
+                ))}
+              </select>
+            </div>
+
             {/* File Attachments */}
             <div className="mt-6 pt-6 border-t border-gray-200">
               {editingInvoice ? (
@@ -1634,7 +1715,7 @@ const { tenant } = useTenant();
                 onClick={() => {
                   setShowForm(false);
                   setEditingInvoice(null);
-                  setNewInvoice({ invoice_number: '', amount: 0, date_billed: '' });
+                  setNewInvoice({ invoice_number: '', amount: 0, date_billed: '', change_order_id: '' });
                 }}
                 className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
               >
@@ -1841,16 +1922,23 @@ const { tenant } = useTenant();
   
   
   // Cost Category View with enhanced permissions
-    const CostCategoryView = ({ category }) => {
+    const CostCategoryView = ({ category, selectedChangeOrder, setSelectedChangeOrder, changeOrders }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
     const totals = calculateTotals();
     const budgets = totals.budgets || {};
     const variances = totals.variances || {};
     
-    const allCategoryData = (costData[category] || []).filter(item => 
-      item.project_id === activeProject?.id || !item.project_id
-    );
+    // Use a new variable for filtered data
+    const allCategoryDataRaw = (costData[category] || []).filter(item => item.project_id === activeProject?.id || !item.project_id);
+    let allCategoryData = allCategoryDataRaw;
+    if (selectedChangeOrder !== 'all') {
+      if (selectedChangeOrder === 'base') {
+        allCategoryData = allCategoryDataRaw.filter(item => !item.change_order_id);
+      } else {
+        allCategoryData = allCategoryDataRaw.filter(item => item.change_order_id === selectedChangeOrder);
+      }
+    }
     const filteredCategoryData = applyFilters(allCategoryData, category);
 
     const canRead = hasPermission(category, 'read');
@@ -1934,6 +2022,22 @@ const { tenant } = useTenant();
           </div>
         </div>
 
+        {/* Change Order Filter Dropdown */}
+        <div className="flex items-center gap-4 mb-2">
+          <label className="text-sm font-medium text-gray-700">Change Order:</label>
+          <select
+            value={selectedChangeOrder}
+            onChange={e => setSelectedChangeOrder(e.target.value)}
+            className="px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="all">All</option>
+            <option value="base">Base Contract</option>
+            {changeOrders.map(co => (
+              <option key={co.id} value={co.id}>{co.name}</option>
+            ))}
+          </select>
+        </div>
+
         {/* Budget vs Actual Section */}
         <div className="bg-white p-6 rounded-lg shadow-md border-l-4 border-blue-500">
           <BudgetTrackingSection 
@@ -1964,6 +2068,7 @@ const { tenant } = useTenant();
             category={category}
             onSave={handleSave}
             editItem={editingItem}
+            changeOrders={changeOrders}
           />
         )}
 
@@ -2361,7 +2466,7 @@ const { tenant } = useTenant();
       jobName: '',
       customer: '',
       fieldShopBoth: 'Both',
-      totalContractValue: 0,
+      totalContractValue: '', // string
       status: 'Active'
     });
     
@@ -2390,26 +2495,33 @@ const { tenant } = useTenant();
     const handleSaveProject = async () => {
       try {
         if (editingProject) {
-          const updatedProject = await tenantDbService.projects.update(editingProject.id, editingProject);
+          const updatedProject = await tenantDbService.projects.update(editingProject.id, {
+            ...editingProject,
+            totalContractValue: parseFloat(editingProject.totalContractValue) || 0
+          });
           setAllProjects(allProjects.map(p => p.id === editingProject.id ? updatedProject : p));
-          
           // Also update the main projects list if it's active
           if (updatedProject.status === 'Active') {
             const activeProjects = await tenantDbService.projects.getAll(false);
             setProjects(activeProjects);
           } else {
-            // Remove from active projects if deactivated
             setProjects(projects.filter(p => p.id !== editingProject.id));
             if (activeProject?.id === editingProject.id) {
               const activeProjects = await tenantDbService.projects.getAll(false);
               setActiveProject(activeProjects[0] || null);
             }
           }
+          // If the edited project is the active project, update it and reload project data
+          if (activeProject?.id === updatedProject.id) {
+            setActiveProject(updatedProject);
+            loadProjectData(updatedProject.id);
+          }
         } else {
-          const newProjectData = await tenantDbService.projects.create(newProject);
+          const newProjectData = await tenantDbService.projects.create({
+            ...newProject,
+            totalContractValue: parseFloat(newProject.totalContractValue) || 0
+          });
           setAllProjects([newProjectData, ...allProjects]);
-          
-          // Add to main projects list if active
           if (newProjectData.status === 'Active') {
             setProjects([newProjectData, ...projects]);
             if (!activeProject) {
@@ -2417,7 +2529,6 @@ const { tenant } = useTenant();
             }
           }
         }
-        
         setShowProjectModal(false);
         setEditingProject(null);
         setNewProject({
@@ -2425,7 +2536,7 @@ const { tenant } = useTenant();
           jobName: '',
           customer: '',
           fieldShopBoth: 'Both',
-          totalContractValue: 0,
+          totalContractValue: '',
           status: 'Active'
         });
       } catch (error) {
@@ -2649,10 +2760,10 @@ const { tenant } = useTenant();
                   <label className="block text-sm font-medium text-gray-700 mb-1">Total Contract Value</label>
                   <input
                     type="number"
-                    value={editingProject ? editingProject.totalContractValue : newProject.totalContractValue}
+                    value={editingProject ? editingProject.totalContractValue?.toString() : newProject.totalContractValue}
                     onChange={(e) => editingProject 
-                      ? setEditingProject({...editingProject, totalContractValue: parseFloat(e.target.value) || 0})
-                      : setNewProject({...newProject, totalContractValue: parseFloat(e.target.value) || 0})
+                      ? setEditingProject({...editingProject, totalContractValue: e.target.value})
+                      : setNewProject({...newProject, totalContractValue: e.target.value})
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
@@ -2693,6 +2804,12 @@ const { tenant } = useTenant();
                 </button>
               </div>
             </div>
+          </div>
+        )}
+        {/* Change Orders Section */}
+        {activeProject && (
+          <div className="bg-white rounded-lg shadow-md overflow-hidden mt-8">
+            <ChangeOrdersSection activeProject={activeProject} />
           </div>
         )}
       </div>
@@ -2779,7 +2896,7 @@ const { tenant } = useTenant();
               {/* Cost Categories */}
               {[
                 { key: 'material', label: 'Material', icon: Building },
-                { key: 'labor', label: 'Labor', icon: Users },
+                { key: 'labor', label: 'Labor', icon: Wrench },
                 { key: 'equipment', label: 'Equipment', icon: Wrench },
                 { key: 'subcontractor', label: 'Subcontractors', icon: User },
                 { key: 'capLeases', label: 'Cap Leases', icon: Calendar },
@@ -2842,11 +2959,11 @@ const { tenant } = useTenant();
           {/* Main Content */}
           <main className="flex-1">
             {currentView === 'dashboard' && <DashboardView />}
-            {currentView === 'invoices' && <CustomerInvoiceView />}
+            {currentView === 'invoices' && <CustomerInvoiceView changeOrders={changeOrders} selectedChangeOrder={selectedChangeOrder} setSelectedChangeOrder={setSelectedChangeOrder} />}
             {currentView === 'users' && <UserManagementView />}
             {currentView === 'projects' && <ProjectManagementView />}
             {['material', 'labor', 'equipment', 'subcontractor', 'others', 'capLeases', 'consumable'].includes(currentView) && (
-              <CostCategoryView category={currentView} />
+              <CostCategoryView category={currentView} selectedChangeOrder={selectedChangeOrder} setSelectedChangeOrder={setSelectedChangeOrder} changeOrders={changeOrders} />
             )}
           </main>
         </div>
@@ -2869,6 +2986,178 @@ const App = () => {
       <ProjectTrackingApp />
     </TenantProvider>
   );
+};
+
+// ChangeOrdersSection component
+const ChangeOrdersSection = ({ activeProject }) => {
+  const [changeOrders, setChangeOrders] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [editingChangeOrder, setEditingChangeOrder] = useState(null);
+  const [form, setForm] = useState({ name: '', description: '', additional_contract_value: 0 });
+
+  useEffect(() => {
+    if (activeProject) {
+      loadChangeOrders();
+    }
+    // eslint-disable-next-line
+  }, [activeProject]);
+
+  const loadChangeOrders = async () => {
+    setLoading(true);
+    try {
+      const data = await tenantDbService.changeOrders.getAllByProject(activeProject.id);
+      setChangeOrders(data);
+    } catch (error) {
+      console.error('Error loading change orders:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      if (editingChangeOrder) {
+        await tenantDbService.changeOrders.update(editingChangeOrder.id, form);
+      } else {
+        await tenantDbService.changeOrders.create(activeProject.id, form);
+      }
+      setShowModal(false);
+      setEditingChangeOrder(null);
+      setForm({ name: '', description: '', additional_contract_value: 0 });
+      loadChangeOrders();
+    } catch (error) {
+      console.error('Error saving change order:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this change order?')) return;
+    setLoading(true);
+    try {
+      await tenantDbService.changeOrders.delete(id);
+      loadChangeOrders();
+    } catch (error) {
+      console.error('Error deleting change order:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-xl font-bold text-gray-900">Change Orders</h3>
+        <button
+          onClick={() => { setShowModal(true); setEditingChangeOrder(null); setForm({ name: '', description: '', additional_contract_value: 0 }); }}
+          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+        >
+          + Add Change Order
+        </button>
+      </div>
+      <table className="min-w-full divide-y divide-gray-200">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Additional Contract Value</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-gray-200">
+          {changeOrders.map((co) => (
+            <tr key={co.id} className="hover:bg-gray-50">
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{co.name}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{co.description}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${co.additional_contract_value?.toLocaleString()}</td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                <button
+                  onClick={() => { setEditingChangeOrder(co); setForm({ name: co.name, description: co.description, additional_contract_value: co.additional_contract_value }); setShowModal(true); }}
+                  className="text-blue-600 hover:text-blue-900 mr-4"
+                >Edit</button>
+                <button
+                  onClick={() => handleDelete(co.id)}
+                  className="text-red-600 hover:text-red-900"
+                  disabled={loading}
+                >Delete</button>
+              </td>
+            </tr>
+          ))}
+          {changeOrders.length === 0 && (
+            <tr><td colSpan={4} className="text-center py-8 text-gray-500">No change orders found</td></tr>
+          )}
+        </tbody>
+      </table>
+      {/* Modal for create/edit */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-4">{editingChangeOrder ? 'Edit Change Order' : 'Add Change Order'}</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={e => setForm({ ...form, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={form.description}
+                  onChange={e => setForm({ ...form, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Additional Contract Value</label>
+                <input
+                  type="number"
+                  value={form.additional_contract_value}
+                  onChange={e => setForm({ ...form, additional_contract_value: parseFloat(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-6">
+              <button
+                onClick={handleSave}
+                disabled={loading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+              >{loading ? 'Saving...' : 'Save'}</button>
+              <button
+                onClick={() => { setShowModal(false); setEditingChangeOrder(null); }}
+                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+              >Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const mapCostFormDataToDb = (category, formData) => {
+  const mapping = {
+    labor: { employeeName: 'employee_name', stHours: 'st_hours', stRate: 'st_rate', otHours: 'ot_hours', otRate: 'ot_rate', dtHours: 'dt_hours', dtRate: 'dt_rate', perDiem: 'per_diem' },
+    subcontractor: { subcontractor_name: 'subcontractor_name' },
+    // Add more mappings as needed
+  };
+  let mapped = { ...formData };
+  if (mapping[category]) {
+    Object.entries(mapping[category]).forEach(([from, to]) => {
+      if (from in mapped) {
+        mapped[to] = mapped[from];
+        if (from !== to) delete mapped[from];
+      }
+    });
+  }
+  return mapped;
 };
 
 export default App;
