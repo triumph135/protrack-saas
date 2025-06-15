@@ -17,10 +17,50 @@ import FileAttachments from './components/FileAttachments';
 import BudgetVsActualReport from './components/BudgetVsActualReport';
 import EmployeeManagement from './components/EmployeeManagement';
 import { dbService, supabase } from './lib/supabase';
+import ChangeOrdersSection from './components/ChangeOrdersSection';
+
+// Utility to map cost form data to DB fields
+function mapCostFormDataToDb(category, formData) {
+  if (category === 'labor') {
+    return {
+      employee_id: formData.employee_id || null,
+      employeeName: formData.employeeName || '',
+      date: formData.date,
+      stHours: formData.stHours || 0,
+      stRate: formData.stRate || 0,
+      otHours: formData.otHours || 0,
+      otRate: formData.otRate || 0,
+      dtHours: formData.dtHours || 0,
+      dtRate: formData.dtRate || 0,
+      perDiem: formData.perDiem || 0,
+      mobQty: formData.mobQty || 0,
+      mobRate: formData.mobRate || 0
+    };
+  } else if (["equipment", "subcontractor"].includes(category)) {
+    return {
+      subcontractorName: formData.subcontractorName,
+      date: formData.date,
+      vendor: formData.vendor,
+      invoiceNumber: formData.invoice_number,
+      cost: formData.cost,
+      inSystem: formData.in_system || false
+    };
+  } else {
+    // material, others, capLeases, consumable
+    return {
+      date: formData.date,
+      vendor: formData.vendor,
+      invoiceNumber: formData.invoice_number,
+      cost: formData.cost,
+      inSystem: formData.in_system || false,
+      description: formData.description || undefined
+    };
+  }
+}
 
 const ProjectTrackingApp = () => {
   // Authentication
-  const { user, loading: authLoading, signIn, signUp, signOut } = useTenantAuth();
+  const { user, loading: authLoading, signIn, signUp, signOut } = useAuth();
   const { tenant } = useTenant();
 
   // State management
@@ -36,10 +76,7 @@ const ProjectTrackingApp = () => {
   const [loading, setLoading] = useState(false);
   const [showBudgetReport, setShowBudgetReport] = useState(false);
   const [changeOrders, setChangeOrders] = useState([]);
-  // Add selectedChangeOrder state at the top level
   const [selectedChangeOrder, setSelectedChangeOrder] = useState('all');
-
-  // Cost categories data structure
   const [costData, setCostData] = useState({
     material: [],
     labor: [],
@@ -49,8 +86,6 @@ const ProjectTrackingApp = () => {
     capLeases: [],
     consumable: []
   });
-
-  // Budget data structure
   const [budgetData, setBudgetData] = useState({
     material_budget: 0,
     labor_budget: 0,
@@ -60,8 +95,6 @@ const ProjectTrackingApp = () => {
     cap_leases_budget: 0,
     consumable_budget: 0
   });
-
-  // Filter states
   const [filters, setFilters] = useState({
     material: { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', in_system: 'all' },
     labor: { startDate: '', endDate: '', employeeName: '', minHours: '', maxHours: '' },
@@ -72,21 +105,15 @@ const ProjectTrackingApp = () => {
     consumable: { startDate: '', endDate: '', vendor: '', minCost: '', maxCost: '', in_system: 'all' },
     invoices: { startDate: '', endDate: '', invoice_number: '', minAmount: '', maxAmount: '' }
   });
-
-  // Add at the top level of ProjectTrackingApp
   const [allEmployees, setAllEmployees] = useState([]);
-  useEffect(() => {
-    if (tenant?.id && activeProject?.id) {
-      supabase
-        .from('employees')
-        .select('*')
-        .eq('tenant_id', tenant.id)
-        .or(`project_id.eq.${activeProject.id},project_id.is.null`)
-        .then(({ data, error }) => {
-          if (!error) setAllEmployees(data);
-        });
-    }
-  }, [tenant?.id, activeProject?.id]);
+  // --- Change Order Modal and Change Orders By Project Hooks ---
+  const [changeOrdersByProject, setChangeOrdersByProject] = useState({});
+  const [showChangeOrderModal, setShowChangeOrderModal] = useState(false);
+  const [changeOrderModalProject, setChangeOrderModalProject] = useState(null);
+  const [editingChangeOrder, setEditingChangeOrder] = useState(null);
+  const [changeOrderForm, setChangeOrderForm] = useState({ name: '', additional_contract_value: '', description: '' });
+  const [changeOrderLoading, setChangeOrderLoading] = useState(false);
+  const [changeOrderError, setChangeOrderError] = useState('');
 
   // Load data when user logs in or active project changes
   useEffect(() => {
@@ -2736,72 +2763,86 @@ const ProjectTrackingApp = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredProjects.map((project) => (
-                <tr key={project.id} className={`hover:bg-gray-50 ${activeProject?.id === project.id ? 'bg-blue-50' : ''}`}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{project.jobNumber}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{project.jobName}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{project.customer}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${project.totalContractValue?.toLocaleString()}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <select
-                      value={project.status}
-                      onChange={(e) => handleStatusChange(project.id, e.target.value)}
-                      disabled={!canWrite}
-                      className={`px-2 py-1 text-xs rounded-full border-0 focus:ring-2 focus:ring-blue-500 ${
-                        project.status === 'Active' ? 'bg-green-100 text-green-800' :
-                        project.status === 'Completed' ? 'bg-blue-100 text-blue-800' :
-                        project.status === 'Inactive' ? 'bg-gray-100 text-gray-800' :
-                        'bg-yellow-100 text-yellow-800'
-                      } ${!canWrite ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-                    >
-                      <option value="Active">Active</option>
-                      <option value="Inactive">Inactive</option>
-                      <option value="Completed">Completed</option>
-                      <option value="On Hold">On Hold</option>
-                    </select>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      onClick={() => setActiveProject(project)}
-                      className="text-green-600 hover:text-green-900 mr-4"
-                      title="View Project"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-                    {canWrite && (
-                      <>
-                        <button
-                          onClick={() => {
-                            setEditingProject(project);
-                            setShowProjectModal(true);
-                          }}
-                          className="text-blue-600 hover:text-blue-900 mr-4"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (window.confirm('Are you sure you want to delete this project? This will also delete all associated data.')) {
-                              handleDeleteProject(project.id);
-                              setAllProjects(allProjects.filter(p => p.id !== project.id));
-                            }
-                          }}
-                          disabled={loading}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </>
-                    )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      onClick={() => { setEmployeeModalProject(project); setShowEmployeeModal(true); }}
-                      className="text-indigo-600 hover:text-indigo-900"
-                    >
-                      Edit Employees
-                    </button>
-                  </td>
-                </tr>
+                <React.Fragment key={project.id}>
+                  <tr className={`hover:bg-gray-50 ${activeProject?.id === project.id ? 'bg-blue-50' : ''}`}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{project.jobNumber}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{project.jobName}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{project.customer}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${project.totalContractValue?.toLocaleString()}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <select
+                        value={project.status}
+                        onChange={(e) => handleStatusChange(project.id, e.target.value)}
+                        disabled={!canWrite}
+                        className={`px-2 py-1 text-xs rounded-full border-0 focus:ring-2 focus:ring-blue-500 ${
+                          project.status === 'Active' ? 'bg-green-100 text-green-800' :
+                          project.status === 'Completed' ? 'bg-blue-100 text-blue-800' :
+                          project.status === 'Inactive' ? 'bg-gray-100 text-gray-800' :
+                          'bg-yellow-100 text-yellow-800'
+                        } ${!canWrite ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                      >
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                        <option value="Completed">Completed</option>
+                        <option value="On Hold">On Hold</option>
+                      </select>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <button
+                        onClick={() => setActiveProject(project)}
+                        className="text-green-600 hover:text-green-900 mr-4"
+                        title="View Project"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      {canWrite && (
+                        <>
+                          <button
+                            onClick={() => {
+                              setEditingProject(project);
+                              setShowProjectModal(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-900 mr-4"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm('Are you sure you want to delete this project? This will also delete all associated data.')) {
+                                handleDeleteProject(project.id);
+                                setAllProjects(allProjects.filter(p => p.id !== project.id));
+                              }
+                            }}
+                            disabled={loading}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <button
+                        onClick={() => { setEmployeeModalProject(project); setShowEmployeeModal(true); }}
+                        className="text-indigo-600 hover:text-indigo-900"
+                      >
+                        Edit Employees
+                      </button>
+                    </td>
+                  </tr>
+                  {/* Change Orders Section for this project */}
+                  <tr>
+                    <td colSpan={7} className="bg-gray-50">
+                      <ChangeOrdersSection
+                        project={project}
+                        changeOrders={changeOrdersByProject[project.id] || []}
+                        onAdd={handleOpenChangeOrderModal}
+                        onEdit={handleOpenChangeOrderModal}
+                        onDelete={handleDeleteChangeOrder}
+                      />
+                    </td>
+                  </tr>
+                </React.Fragment>
               ))}
             </tbody>
           </table>
@@ -2923,11 +2964,6 @@ const ProjectTrackingApp = () => {
           </div>
         )}
         {/* Change Orders Section */}
-        {activeProject && (
-          <div className="bg-white rounded-lg shadow-md overflow-hidden mt-8">
-            <ChangeOrdersSection activeProject={activeProject} />
-          </div>
-        )}
         {showEmployeeModal && employeeModalProject && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg w-full max-w-2xl relative">
@@ -2942,9 +2978,174 @@ const ProjectTrackingApp = () => {
             </div>
           </div>
         )}
+        {/* Change Orders Section */}
+        {activeProject && (
+          <div className="bg-white rounded-lg shadow-md overflow-hidden mt-8">
+            <ChangeOrdersSection activeProject={activeProject} />
+          </div>
+        )}
+        {showChangeOrderModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg w-full max-w-md">
+              <h3 className="text-lg font-semibold mb-4">
+                {editingChangeOrder ? 'Edit Change Order' : 'Add Change Order'}
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <input
+                    type="text"
+                    name="name"
+                    value={changeOrderForm.name}
+                    onChange={handleChangeOrderFormChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Value</label>
+                  <input
+                    type="number"
+                    name="additional_contract_value"
+                    value={changeOrderForm.additional_contract_value}
+                    onChange={handleChangeOrderFormChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    min="0"
+                    step="0.01"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <input
+                    type="text"
+                    name="description"
+                    value={changeOrderForm.description}
+                    onChange={handleChangeOrderFormChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                {changeOrderError && <div className="text-red-600">{changeOrderError}</div>}
+              </div>
+              <div className="flex gap-2 mt-6">
+                <button
+                  onClick={handleSaveChangeOrder}
+                  disabled={changeOrderLoading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {changeOrderLoading ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  onClick={handleCloseChangeOrderModal}
+                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
+
+
+  // Fetch change orders for a project
+  const fetchChangeOrdersForProject = async (projectId) => {
+    try {
+      const data = await tenantDbService.changeOrders.getAllByProject(projectId);
+      setChangeOrdersByProject(prev => ({ ...prev, [projectId]: data }));
+    } catch (err) {
+      setChangeOrdersByProject(prev => ({ ...prev, [projectId]: [] }));
+    }
+  };
+
+  // Open modal to add or edit change order
+  const handleOpenChangeOrderModal = (project, changeOrder = null) => {
+    setChangeOrderModalProject(project);
+    setEditingChangeOrder(changeOrder);
+    setChangeOrderForm(changeOrder ? {
+      name: changeOrder.name,
+      additional_contract_value: changeOrder.additional_contract_value,
+      description: changeOrder.description || ''
+    } : { name: '', additional_contract_value: '', description: '' });
+    setShowChangeOrderModal(true);
+  };
+
+  const handleCloseChangeOrderModal = () => {
+    setShowChangeOrderModal(false);
+    setChangeOrderModalProject(null);
+    setEditingChangeOrder(null);
+    setChangeOrderForm({ name: '', additional_contract_value: '', description: '' });
+    setChangeOrderError('');
+  };
+
+  const handleChangeOrderFormChange = (e) => {
+    setChangeOrderForm({ ...changeOrderForm, [e.target.name]: e.target.value });
+  };
+
+  const handleSaveChangeOrder = async () => {
+    if (!changeOrderModalProject) return;
+    setChangeOrderLoading(true);
+    setChangeOrderError('');
+    try {
+      if (editingChangeOrder) {
+        await tenantDbService.changeOrders.update(editingChangeOrder.id, {
+          name: changeOrderForm.name,
+          additional_contract_value: parseFloat(changeOrderForm.additional_contract_value) || 0,
+          description: changeOrderForm.description
+        });
+      } else {
+        await tenantDbService.changeOrders.create(changeOrderModalProject.id, {
+          name: changeOrderForm.name,
+          additional_contract_value: parseFloat(changeOrderForm.additional_contract_value) || 0,
+          description: changeOrderForm.description
+        });
+      }
+      await fetchChangeOrdersForProject(changeOrderModalProject.id);
+      handleCloseChangeOrderModal();
+    } catch (err) {
+      setChangeOrderError('Failed to save change order');
+    } finally {
+      setChangeOrderLoading(false);
+    }
+  };
+
+  const handleDeleteChangeOrder = async (project, changeOrder) => {
+    if (!window.confirm('Delete this change order?')) return;
+    try {
+      await tenantDbService.changeOrders.delete(changeOrder.id);
+      await fetchChangeOrdersForProject(project.id);
+    } catch (err) {}
+  };
+
+  // Fetch change orders for all visible projects on mount and when projects change
+  useEffect(() => {
+    filteredProjects.forEach(project => {
+      fetchChangeOrdersForProject(project.id);
+    });
+    // eslint-disable-next-line
+  }, [filteredProjects.length]);
+
+  // Inside ProjectManagementView, after filteredProjects is defined:
+  useEffect(() => {
+    // Fetch change orders for all visible projects
+    const fetchChangeOrdersForProjects = async () => {
+      const newChangeOrdersByProject = {};
+      for (const project of filteredProjects) {
+        try {
+          const changeOrders = await tenantDbService.changeOrders.getAll(project.id);
+          newChangeOrdersByProject[project.id] = changeOrders;
+        } catch (error) {
+          newChangeOrdersByProject[project.id] = [];
+        }
+      }
+      setChangeOrdersByProject(newChangeOrdersByProject);
+    };
+    if (filteredProjects.length > 0) {
+      fetchChangeOrdersForProjects();
+    }
+  }, [filteredProjects]);
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -3102,192 +3303,36 @@ const ProjectTrackingApp = () => {
   );
 };
 
-const App = () => {
-  // Check if we need to show tenant registration
-  const hostname = window.location.hostname;
-  const isMainDomain = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === 'protrack.com';
-  
-  if (isMainDomain && !window.location.search.includes('tenant=')) {
+const AppContent = () => {
+  const { user, loading: authLoading, signIn, signUp, signOut } = useAuth();
+  const { tenant, loading: tenantLoading } = useTenant();
+
+  if (authLoading || tenantLoading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading ProTrack...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage onSignIn={signIn} onSignUp={signUp} loading={authLoading} />;
+  }
+
+  if (!tenant) {
     return <TenantRegistration />;
   }
 
-  return (
-    <TenantProvider>
-      <ProjectTrackingApp />
-    </TenantProvider>
-  );
+  return <ProjectTrackingApp />;
 };
 
-// ChangeOrdersSection component
-const ChangeOrdersSection = ({ activeProject }) => {
-  const [changeOrders, setChangeOrders] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [editingChangeOrder, setEditingChangeOrder] = useState(null);
-  const [form, setForm] = useState({ name: '', description: '', additional_contract_value: 0 });
-
-  useEffect(() => {
-    if (activeProject) {
-      loadChangeOrders();
-    }
-    // eslint-disable-next-line
-  }, [activeProject]);
-
-  const loadChangeOrders = async () => {
-    setLoading(true);
-    try {
-      const data = await tenantDbService.changeOrders.getAllByProject(activeProject.id);
-      setChangeOrders(data);
-    } catch (error) {
-      console.error('Error loading change orders:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSave = async () => {
-    setLoading(true);
-    try {
-      if (editingChangeOrder) {
-        await tenantDbService.changeOrders.update(editingChangeOrder.id, form);
-      } else {
-        await tenantDbService.changeOrders.create(activeProject.id, form);
-      }
-      setShowModal(false);
-      setEditingChangeOrder(null);
-      setForm({ name: '', description: '', additional_contract_value: 0 });
-      loadChangeOrders();
-    } catch (error) {
-      console.error('Error saving change order:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this change order?')) return;
-    setLoading(true);
-    try {
-      await tenantDbService.changeOrders.delete(id);
-      loadChangeOrders();
-    } catch (error) {
-      console.error('Error deleting change order:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-xl font-bold text-gray-900">Change Orders</h3>
-        <button
-          onClick={() => { setShowModal(true); setEditingChangeOrder(null); setForm({ name: '', description: '', additional_contract_value: 0 }); }}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-        >
-          + Add Change Order
-        </button>
-      </div>
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Additional Contract Value</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
-          {changeOrders.map((co) => (
-            <tr key={co.id} className="hover:bg-gray-50">
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{co.name}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{co.description}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${co.additional_contract_value?.toLocaleString()}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                <button
-                  onClick={() => { setEditingChangeOrder(co); setForm({ name: co.name, description: co.description, additional_contract_value: co.additional_contract_value }); setShowModal(true); }}
-                  className="text-blue-600 hover:text-blue-900 mr-4"
-                >Edit</button>
-                <button
-                  onClick={() => handleDelete(co.id)}
-                  className="text-red-600 hover:text-red-900"
-                  disabled={loading}
-                >Delete</button>
-              </td>
-            </tr>
-          ))}
-          {changeOrders.length === 0 && (
-            <tr><td colSpan={4} className="text-center py-8 text-gray-500">No change orders found</td></tr>
-          )}
-        </tbody>
-      </table>
-      {/* Modal for create/edit */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">{editingChangeOrder ? 'Edit Change Order' : 'Add Change Order'}</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
-                  value={form.description}
-                  onChange={e => setForm({ ...form, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Additional Contract Value</label>
-                <input
-                  type="number"
-                  value={form.additional_contract_value}
-                  onChange={e => setForm({ ...form, additional_contract_value: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 mt-6">
-              <button
-                onClick={handleSave}
-                disabled={loading}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-              >{loading ? 'Saving...' : 'Save'}</button>
-              <button
-                onClick={() => { setShowModal(false); setEditingChangeOrder(null); }}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
-              >Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const mapCostFormDataToDb = (category, formData) => {
-  const mapping = {
-    labor: { employee_id: 'employee_id', employeeName: 'employee_name', stHours: 'st_hours', stRate: 'st_rate', otHours: 'ot_hours', otRate: 'ot_rate', dtHours: 'dt_hours', dtRate: 'dt_rate', perDiem: 'per_diem', mobQty: 'mob_qty', mobRate: 'mob_rate' },
-    subcontractor: { subcontractor_name: 'subcontractor_name' },
-    // Add more mappings as needed
-  };
-  let mapped = { ...formData };
-  if (mapping[category]) {
-    Object.entries(mapping[category]).forEach(([from, to]) => {
-      if (from in mapped) {
-        mapped[to] = mapped[from];
-        if (from !== to) delete mapped[from];
-      }
-    });
-  }
-  return mapped;
-};
+const App = () => (
+  <TenantProvider>
+    <AppContent />
+  </TenantProvider>
+);
 
 export default App;

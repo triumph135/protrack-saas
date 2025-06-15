@@ -1,5 +1,5 @@
 // components/LoginPage.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BarChart3, Eye, EyeOff, Mail, Lock } from 'lucide-react';
 import Logo from './Logo';
 
@@ -13,9 +13,45 @@ const LoginPage = ({ onSignIn, onSignUp, loading }) => {
   });
   const [error, setError] = useState('');
 
+  // Email and password validation
+  const validateEmail = (email) => {
+    // Simple regex for email validation
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  };
+  const validatePassword = (password) => {
+    return password.length >= 6;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
+    // Client-side validation for signup
+    if (isSignUp) {
+      if (!formData.name.trim()) {
+        setError('Full name is required.');
+        return;
+      }
+      if (!validateEmail(formData.email)) {
+        setError('Please enter a valid email address.');
+        return;
+      }
+      if (!validatePassword(formData.password)) {
+        setError('Password must be at least 6 characters.');
+        return;
+      }
+    }
+    // Client-side validation for login
+    if (!isSignUp) {
+      if (!validateEmail(formData.email)) {
+        setError('Please enter a valid email address.');
+        return;
+      }
+      if (!validatePassword(formData.password)) {
+        setError('Password must be at least 6 characters.');
+        return;
+      }
+    }
 
     try {
       if (isSignUp) {
@@ -24,12 +60,22 @@ const LoginPage = ({ onSignIn, onSignUp, loading }) => {
         });
         if (result.error) {
           setError(result.error.message);
+          // Stay on sign up screen if requested
+          if (result.stayOnSignUp) {
+            setIsSignUp(true);
+            return;
+          }
         }
+        // After successful signup, switch to login mode and prefill email
+        setIsSignUp(false);
+        setFormData({ email: formData.email, password: '', name: '' });
+        setError('Account created! Please log in.');
       } else {
         const result = await onSignIn(formData.email, formData.password);
         if (result.error) {
           setError(result.error.message);
         }
+        // On successful login, the app will handle routing to the correct workspace/tenant
       }
     } catch (err) {
       setError('An unexpected error occurred');
@@ -42,6 +88,12 @@ const LoginPage = ({ onSignIn, onSignUp, loading }) => {
       [e.target.name]: e.target.value
     });
   };
+
+  // Optional: Clear form on logout (if you want to handle this globally, do it in the logout handler)
+  useEffect(() => {
+    setFormData({ email: '', password: '', name: '' });
+    setError('');
+  }, [isSignUp]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">

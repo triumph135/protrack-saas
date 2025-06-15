@@ -4,6 +4,9 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
 const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY
 
+console.log('Supabase URL:', supabaseUrl);
+console.log('Supabase Anon Key:', supabaseAnonKey);
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // Database service functions
@@ -96,10 +99,12 @@ export const dbService = {
       const { data, error } = await supabase
         .from('users')
         .insert([{
+          id: user.id,
           name: user.name,
           email: user.email,
           role: user.role,
-          permissions: user.permissions
+          permissions: user.permissions,
+          tenant_id: user.tenant_id || null
         }])
         .select()
         .single()

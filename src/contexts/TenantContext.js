@@ -1,6 +1,8 @@
 // src/contexts/TenantContext.js
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { tenantDbService } from '../lib/tenantDbService'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../hooks/useAuth'
 
 const TenantContext = createContext()
 
@@ -16,26 +18,21 @@ export const TenantProvider = ({ children }) => {
   const [tenant, setTenant] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const { user, loading: authLoading } = useAuth()
 
   // Get subdomain from URL
   const getSubdomain = () => {
     const hostname = window.location.hostname
-    
-    // For development (localhost)
+    // For development (localhost), do not default to 'main'
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      // You can use a query parameter or default tenant for development
       const urlParams = new URLSearchParams(window.location.search)
-      return urlParams.get('tenant') || 'main'
+      return urlParams.get('tenant') // Only use ?tenant=... if present
     }
-    
-    // For production - extract subdomain
     const parts = hostname.split('.')
     if (parts.length >= 3) {
-      return parts[0] // subdomain.domain.com -> subdomain
+      return parts[0]
     }
-    
-    // Default fallback
-    return 'main'
+    return undefined // No subdomain/tenant
   }
 
   // Initialize tenant on load
@@ -44,30 +41,77 @@ export const TenantProvider = ({ children }) => {
       try {
         setLoading(true)
         setError(null)
-        
-        const subdomain = getSubdomain()
-        
-        // Fetch tenant data
-        const tenantData = await tenantDbService.tenants.getBySubdomain(subdomain)
-        
-        if (!tenantData) {
-          throw new Error(`Tenant not found for subdomain: ${subdomain}`)
+
+        // If no user, do not fetch tenant, just set tenant to null and stop loading
+        if (!user) {
+          setTenant(null);
+          setLoading(false);
+          return;
         }
-        
-        // Set tenant in context and database service
-        setTenant(tenantData)
-        tenantDbService.setTenant(tenantData.id)
-        
+
+        // If user is logged in, fetch their tenant
+        if (user && user.id) {
+          const { data: userProfile, error: userError } = await supabase
+            .from('users')
+            .select('tenant_id')
+            .eq('id', user.id)
+            .single();
+          if (userError) throw userError;
+          if (userProfile && userProfile.tenant_id) {
+            const { data: tenantData, error: tenantError } = await supabase
+              .from('tenants')
+              .select('*')
+              .eq('id', userProfile.tenant_id)
+              .single();
+            if (tenantError) throw tenantError;
+            setTenant(tenantData);
+            tenantDbService.setTenant(tenantData.id);
+
+            // --- REDIRECT LOGIC ---
+            const hostname = window.location.hostname;
+            const currentSubdomain = getSubdomain();
+            if (tenantData && tenantData.subdomain) {
+              if (hostname === 'localhost' || hostname === '127.0.0.1') {
+                // Dev: update ?tenant= param if needed
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.get('tenant') !== tenantData.subdomain) {
+                  urlParams.set('tenant', tenantData.subdomain);
+                  window.location.search = urlParams.toString();
+                  return;
+                }
+              } else {
+                // Prod: redirect to correct subdomain if needed
+                if (currentSubdomain !== tenantData.subdomain) {
+                  const newUrl = `${window.location.protocol}//${tenantData.subdomain}.${window.location.hostname.split('.').slice(1).join('.')}${window.location.pathname}`;
+                  window.location.href = newUrl;
+                  return;
+                }
+              }
+            }
+            // --- END REDIRECT LOGIC ---
+
+            setLoading(false);
+            return;
+          } else {
+            setTenant(null);
+            setLoading(false);
+            return;
+          }
+        }
+
+        // Fallback: no user, use subdomain or query param (should not happen now)
+        setTenant(null);
+        setLoading(false);
       } catch (err) {
         console.error('Failed to initialize tenant:', err)
         setError(err.message)
-      } finally {
-        setLoading(false)
+        setLoading(false);
       }
     }
-
-    initializeTenant()
-  }, [])
+    if (!authLoading) {
+      initializeTenant();
+    }
+  }, [user, authLoading])
 
   // Switch tenant (useful for admin interfaces)
   const switchTenant = async (subdomain) => {

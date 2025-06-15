@@ -1,8 +1,5 @@
 // src/lib/tenantDbService.js
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
-const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY
+import { supabase } from './supabase'
 
 function mapLaborDbToApp(item) {
   return {
@@ -23,7 +20,6 @@ function mapLaborDbToApp(item) {
 
 class TenantDbService {
   constructor() {
-    this.supabase = createClient(supabaseUrl, supabaseKey)
     this.currentTenant = null
   }
 
@@ -38,7 +34,7 @@ class TenantDbService {
   // Tenant operations
   tenants = {
     create: async (tenantData) => {
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('tenants')
         .insert([tenantData])
         .select()
@@ -49,7 +45,7 @@ class TenantDbService {
     },
 
     getBySubdomain: async (subdomain) => {
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('tenants')
         .select('*')
         .eq('subdomain', subdomain)
@@ -61,7 +57,7 @@ class TenantDbService {
     },
 
     update: async (tenantId, updates) => {
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('tenants')
         .update(updates)
         .eq('id', tenantId)
@@ -78,7 +74,7 @@ class TenantDbService {
     getAll: async () => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('users')
         .select('*')
         .eq('tenant_id', this.currentTenant)
@@ -91,7 +87,7 @@ class TenantDbService {
     create: async (userData) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('users')
         .insert([{ ...userData, tenant_id: this.currentTenant }])
         .select()
@@ -104,7 +100,7 @@ class TenantDbService {
     update: async (userId, updates) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('users')
         .update(updates)
         .eq('id', userId)
@@ -119,7 +115,7 @@ class TenantDbService {
     delete: async (userId) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { error } = await this.supabase
+      const { error } = await supabase
         .from('users')
         .delete()
         .eq('id', userId)
@@ -131,7 +127,7 @@ class TenantDbService {
     getByEmail: async (email) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('users')
         .select('*')
         .eq('email', email)
@@ -148,7 +144,7 @@ class TenantDbService {
     getAll: async (includeInactive = false) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      let query = this.supabase
+      let query = supabase
         .from('projects')
         .select('*')
         .eq('tenant_id', this.currentTenant)
@@ -167,7 +163,7 @@ class TenantDbService {
     getAllWithStatus: async () => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('projects')
         .select('*')
         .eq('tenant_id', this.currentTenant)
@@ -180,7 +176,7 @@ class TenantDbService {
     create: async (projectData) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('projects')
         .insert([{ ...projectData, tenant_id: this.currentTenant, status: 'Active' }])
         .select()
@@ -193,7 +189,7 @@ class TenantDbService {
     update: async (projectId, updates) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('projects')
         .update(updates)
         .eq('id', projectId)
@@ -208,7 +204,7 @@ class TenantDbService {
     updateStatus: async (projectId, status) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('projects')
         .update({ status })
         .eq('id', projectId)
@@ -223,7 +219,7 @@ class TenantDbService {
     delete: async (projectId) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { error } = await this.supabase
+      const { error } = await supabase
         .from('projects')
         .delete()
         .eq('id', projectId)
@@ -238,7 +234,7 @@ class TenantDbService {
     getByProject: async (projectId, changeOrderId = null) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      let query = this.supabase
+      let query = supabase
         .from('customer_invoices')
         .select('*')
         .eq('project_id', projectId)
@@ -257,7 +253,7 @@ class TenantDbService {
     create: async (invoiceData) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('customer_invoices')
         .insert([{ ...invoiceData, tenant_id: this.currentTenant }])
         .select()
@@ -270,7 +266,7 @@ class TenantDbService {
     update: async (invoiceId, updates) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('customer_invoices')
         .update(updates)
         .eq('id', invoiceId)
@@ -285,7 +281,7 @@ class TenantDbService {
     delete: async (invoiceId) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { error } = await this.supabase
+      const { error } = await supabase
         .from('customer_invoices')
         .delete()
         .eq('id', invoiceId)
@@ -299,7 +295,7 @@ class TenantDbService {
   costs = {
     getByProject: async (category, projectId, changeOrderId = null) => {
       if (!this.currentTenant) throw new Error('No tenant context')
-      let query = this.supabase
+      let query = supabase
         .from('project_costs')
         .select('*')
         .eq('category', category)
@@ -319,7 +315,7 @@ class TenantDbService {
 
     create: async (category, costData) => {
       if (!this.currentTenant) throw new Error('No tenant context')
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('project_costs')
         .insert([{ 
           ...costData, 
@@ -337,7 +333,7 @@ class TenantDbService {
 
     update: async (category, costId, updates) => {
       if (!this.currentTenant) throw new Error('No tenant context')
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('project_costs')
         .update(updates)
         .eq('id', costId)
@@ -354,7 +350,7 @@ class TenantDbService {
     delete: async (category, costId) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { error } = await this.supabase
+      const { error } = await supabase
         .from('project_costs')
         .delete()
         .eq('id', costId)
@@ -369,7 +365,7 @@ class TenantDbService {
     getByProject: async (projectId) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('project_budgets')
         .select('*')
         .eq('tenant_id', this.currentTenant)
@@ -391,7 +387,7 @@ class TenantDbService {
     createDefaultBudget: async (projectId) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('project_budgets')
         .insert([{
           tenant_id: this.currentTenant,
@@ -414,7 +410,7 @@ class TenantDbService {
     update: async (projectId, budgetData) => {
       if (!this.currentTenant) throw new Error('No tenant context')
       
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('project_budgets')
         .update(budgetData)
         .eq('tenant_id', this.currentTenant)
@@ -432,7 +428,7 @@ class TenantDbService {
       const budgetField = category === 'capLeases' ? 'cap_leases_budget' : `${category}_budget`
       const updateData = { [budgetField]: amount }
       
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('project_budgets')
         .update(updateData)
         .eq('tenant_id', this.currentTenant)
@@ -449,7 +445,7 @@ class TenantDbService {
   changeOrders = {
     getAllByProject: async (projectId) => {
       if (!this.currentTenant) throw new Error('No tenant context');
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('change_orders')
         .select('*')
         .eq('project_id', projectId)
@@ -460,7 +456,7 @@ class TenantDbService {
     },
     create: async (projectId, changeOrderData) => {
       if (!this.currentTenant) throw new Error('No tenant context');
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('change_orders')
         .insert([{ ...changeOrderData, project_id: projectId, tenant_id: this.currentTenant }])
         .select()
@@ -470,7 +466,7 @@ class TenantDbService {
     },
     update: async (id, updates) => {
       if (!this.currentTenant) throw new Error('No tenant context');
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('change_orders')
         .update(updates)
         .eq('id', id)
@@ -482,7 +478,7 @@ class TenantDbService {
     },
     delete: async (id) => {
       if (!this.currentTenant) throw new Error('No tenant context');
-      const { error } = await this.supabase
+      const { error } = await supabase
         .from('change_orders')
         .delete()
         .eq('id', id)
@@ -495,7 +491,7 @@ class TenantDbService {
   changeOrderBudgets = {
     getByChangeOrder: async (changeOrderId) => {
       if (!this.currentTenant) throw new Error('No tenant context');
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('change_order_budgets')
         .select('*')
         .eq('change_order_id', changeOrderId)
@@ -506,7 +502,7 @@ class TenantDbService {
     update: async (changeOrderId, category, amount) => {
       if (!this.currentTenant) throw new Error('No tenant context');
       // Upsert budget for this change order/category
-      const { data, error } = await this.supabase
+      const { data, error } = await supabase
         .from('change_order_budgets')
         .upsert({ change_order_id: changeOrderId, category, budget: amount }, { onConflict: ['change_order_id', 'category'] })
         .select()
@@ -519,7 +515,7 @@ class TenantDbService {
   // Move createDefaultBudget to be a regular class method
   async createDefaultBudget(projectId) {
     if (!this.currentTenant) throw new Error('No tenant context')
-    const { data, error } = await this.supabase
+    const { data, error } = await supabase
       .from('project_budgets')
       .insert([{
         tenant_id: this.currentTenant,

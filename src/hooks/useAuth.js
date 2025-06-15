@@ -54,7 +54,6 @@ async function createUserProfile(userId) {
   try {
     const { data: authUser } = await supabase.auth.getUser()
     if (authUser.user) {
-      // Insert using the auth user's UUID as the primary key
       const { data, error } = await supabase
         .from('users')
         .insert([{
@@ -77,21 +76,51 @@ async function createUserProfile(userId) {
         }])
         .select()
         .single()
-      
-      if (error) throw error
-      
-      const formattedUser = {
-        id: data.id,
-        name: data.name,
-        email: data.email,
-        role: data.role,
-        permissions: data.permissions
+      if (error && !(error.code === '23505' || (error.message && error.message.toLowerCase().includes('duplicate key')))) throw error
+      if (data) {
+        const formattedUser = {
+          id: data.id,
+          name: data.name,
+          email: data.email,
+          role: data.role,
+          permissions: data.permissions
+        }
+        setUser(formattedUser)
       }
-      
-      setUser(formattedUser)
     }
   } catch (error) {
-    console.error('Error creating user profile:', error)
+    if (!(error.code === '23505' || (error.message && error.message.toLowerCase().includes('duplicate key')))) {
+      console.error('Error creating user profile:', error)
+    }
+  }
+}
+
+// New: Update user's tenant_id after tenant creation
+async function updateUserTenantId(userId, tenantId) {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .update({ tenant_id: tenantId, role: 'master', permissions: {
+        material: 'write',
+        labor: 'write',
+        equipment: 'write',
+        subcontractor: 'write',
+        others: 'write',
+        capLeases: 'write',
+        consumable: 'write',
+        invoices: 'write',
+        projects: 'write',
+        users: 'write'
+      } })
+      .eq('id', userId)
+      .select()
+      .single();
+    if (error) throw error;
+    setUser(data);
+    return data;
+  } catch (error) {
+    console.error('Error updating user tenant_id:', error);
+    throw error;
   }
 }
 
@@ -119,33 +148,45 @@ async function createUserProfile(userId) {
         email,
         password,
       })
-      
-      if (error) throw error
-      
-      // Create user profile if signup successful
-      if (data.user && !error) {
-        await dbService.users.create({
-          name: userData.name || email.split('@')[0],
-          email: email,
-          role: userData.role || 'entry',
-          permissions: userData.permissions || {
-            material: 'read',
-            labor: 'read',
-            equipment: 'read',
-            subcontractor: 'read',
-            others: 'read',
-            capLeases: 'read',
-            consumable: 'read',
-            invoices: 'read',
-            projects: 'read',
-            users: 'none'
-          }
-        })
+      if (error) {
+        // Supabase error code for duplicate email is '23505' or message includes 'already registered'
+        if (error.message && error.message.toLowerCase().includes('already registered')) {
+          return { data: null, error: { message: 'An account with this email already exists. Please log in.' }, stayOnSignUp: true }
+        }
+        return { data: null, error, stayOnSignUp: true }
       }
-      
-      return { data, error: null }
+      // Create user profile if signup successful (without tenant_id)
+      if (data.user && !error) {
+        try {
+          await dbService.users.create({
+            id: data.user.id, // Always pass Auth UUID
+            name: userData.name || email.split('@')[0],
+            email: email,
+            role: userData.role || 'entry',
+            permissions: userData.permissions || {
+              material: 'read',
+              labor: 'read',
+              equipment: 'read',
+              subcontractor: 'read',
+              others: 'read',
+              capLeases: 'read',
+              consumable: 'read',
+              invoices: 'read',
+              projects: 'read',
+              users: 'none'
+            },
+            tenant_id: null
+          })
+        } catch (profileError) {
+          // If duplicate key (23505), ignore
+          if (!(profileError.code === '23505' || (profileError.message && profileError.message.toLowerCase().includes('duplicate key')))) {
+            throw profileError;
+          }
+        }
+      }
+      return { data, error: null, stayOnSignUp: false }
     } catch (error) {
-      return { data: null, error }
+      return { data: null, error, stayOnSignUp: true }
     } finally {
       setLoading(false)
     }
@@ -156,6 +197,10 @@ async function createUserProfile(userId) {
     try {
       const { error } = await supabase.auth.signOut()
       if (error) throw error
+      // Clear all localStorage (or just relevant keys if you prefer)
+      localStorage.clear();
+      // Force reload to login page
+      window.location.href = '/';
     } catch (error) {
       console.error('Error signing out:', error)
     } finally {
@@ -180,6 +225,7 @@ async function createUserProfile(userId) {
     signIn,
     signUp,
     signOut,
-    resetPassword
+    resetPassword,
+    updateUserTenantId
   }
 }

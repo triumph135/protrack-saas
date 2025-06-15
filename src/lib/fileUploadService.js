@@ -1,12 +1,8 @@
 // src/lib/fileUploadService.js
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
-const supabaseKey = process.env.REACT_APP_SUPABASE_ANON_KEY
+import { supabase } from './supabase'
 
 class FileUploadService {
   constructor() {
-    this.supabase = createClient(supabaseUrl, supabaseKey)
     this.currentTenant = null
     this.currentUser = null
   }
@@ -59,7 +55,7 @@ class FileUploadService {
       const filePath = this.generateFilePath(entityType, entityId, file.name)
 
       // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await this.supabase.storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from('attachments')
         .upload(filePath, file)
 
@@ -68,7 +64,7 @@ class FileUploadService {
       }
 
       // Save attachment record to database
-      const { data: attachmentData, error: dbError } = await this.supabase
+      const { data: attachmentData, error: dbError } = await supabase
         .from('attachments')
         .insert([{
           tenant_id: this.currentTenant,
@@ -86,7 +82,7 @@ class FileUploadService {
 
       if (dbError) {
         // If database insert fails, clean up the uploaded file
-        await this.supabase.storage.from('attachments').remove([filePath])
+        await supabase.storage.from('attachments').remove([filePath])
         throw new Error(`Database error: ${dbError.message}`)
       }
 
@@ -104,7 +100,7 @@ class FileUploadService {
       throw new Error('No tenant context')
     }
 
-    const { data, error } = await this.supabase
+    const { data, error } = await supabase
       .from('attachments')
       .select(`
         *,
@@ -133,7 +129,7 @@ class FileUploadService {
       throw new Error('Access denied to file')
     }
 
-    const { data } = await this.supabase.storage
+    const { data } = await supabase.storage
       .from('attachments')
       .createSignedUrl(storagePath, 3600) // 1 hour expiry
 
@@ -147,7 +143,7 @@ class FileUploadService {
     }
 
     // Get attachment details first (for security validation)
-    const { data: attachment, error: fetchError } = await this.supabase
+    const { data: attachment, error: fetchError } = await supabase
       .from('attachments')
       .select('*')
       .eq('id', attachmentId)
@@ -159,7 +155,7 @@ class FileUploadService {
     }
 
     // Delete from storage
-    const { error: storageError } = await this.supabase.storage
+    const { error: storageError } = await supabase.storage
       .from('attachments')
       .remove([attachment.storage_path])
 
@@ -169,7 +165,7 @@ class FileUploadService {
     }
 
     // Delete from database
-    const { error: dbError } = await this.supabase
+    const { error: dbError } = await supabase
       .from('attachments')
       .delete()
       .eq('id', attachmentId)
@@ -188,7 +184,7 @@ class FileUploadService {
       throw new Error('No tenant context')
     }
 
-    const { data, error } = await this.supabase
+    const { data, error } = await supabase
       .from('attachments')
       .update({ description })
       .eq('id', attachmentId)
