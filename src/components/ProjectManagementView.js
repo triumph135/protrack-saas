@@ -1,7 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 
 // Project management view with status management
-const ProjectManagementView = () => {
+const ProjectManagementView = ({
+  allProjects,
+  setAllProjects,
+  statusFilter,
+  setStatusFilter,
+  hasPermission,
+  projects,
+  setProjects,
+  activeProject,
+  setActiveProject,
+  loading,
+  setLoading,
+  // ...add other props as needed
+}) => {
   const [newProject, setNewProject] = useState({
     jobNumber: '',
     jobName: '',
@@ -11,8 +24,6 @@ const ProjectManagementView = () => {
     status: 'Active'
   });
   
-  const [allProjects, setAllProjects] = useState([]);
-  const [statusFilter, setStatusFilter] = useState('all'); // all, Active, Inactive, etc.
   const [showEmployeeModal, setShowEmployeeModal] = useState(false);
   const [employeeModalProject, setEmployeeModalProject] = useState(null);
 

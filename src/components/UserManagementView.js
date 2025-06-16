@@ -1,7 +1,21 @@
 import React, { useState, useEffect } from 'react';
+import { useAppState } from '@/components/providers/AppStateProvider';
 
 // User management view with enhanced permissions system
 const UserManagementView = () => {
+  const {
+    users,
+    editingUser,
+    setEditingUser,
+    showUserModal,
+    setShowUserModal,
+    handleCreateUser,
+    handleUpdateUser,
+    handleDeleteUser,
+    hasPermission,
+    loading,
+    // user, // get user from useAuth if needed
+  } = useAppState();
   const [formUser, setFormUser] = useState({ 
     name: '', 
     role: '', 
